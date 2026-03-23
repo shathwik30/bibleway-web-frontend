@@ -1,0 +1,385 @@
+@import "tailwindcss";
+
+@theme {
+  /* ===== Color Tokens (from Stitch mockups) ===== */
+  --color-primary: #59021a;
+  --color-primary-container: #781c2e;
+  --color-primary-fixed: #ffdadc;
+  --color-primary-fixed-dim: #ffb2b9;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #ff8795;
+  --color-on-primary-fixed: #40000f;
+  --color-on-primary-fixed-variant: #822435;
+  --color-inverse-primary: #ffb2b9;
+
+  --color-secondary: #4e5f7c;
+  --color-secondary-container: #c9dbfd;
+  --color-secondary-fixed: #d6e3ff;
+  --color-secondary-fixed-dim: #b6c7e9;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-container: #4f607d;
+  --color-on-secondary-fixed: #081c36;
+  --color-on-secondary-fixed-variant: #364763;
+
+  --color-tertiary: #372700;
+  --color-tertiary-container: #523c00;
+  --color-tertiary-fixed: #ffdf9e;
+  --color-tertiary-fixed-dim: #eac16a;
+  --color-on-tertiary: #ffffff;
+  --color-on-tertiary-container: #cca652;
+  --color-on-tertiary-fixed: #261a00;
+  --color-on-tertiary-fixed-variant: #5b4300;
+
+  --color-surface: #fcf9f8;
+  --color-surface-bright: #fcf9f8;
+  --color-surface-dim: #dcd9d9;
+  --color-surface-container: #f0edec;
+  --color-surface-container-low: #f6f3f2;
+  --color-surface-container-high: #ebe7e7;
+  --color-surface-container-highest: #e5e2e1;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-variant: #e5e2e1;
+  --color-surface-tint: #a13b4b;
+  --color-on-surface: #1c1b1b;
+  --color-on-surface-variant: #564243;
+  --color-inverse-surface: #313030;
+  --color-inverse-on-surface: #f3f0ef;
+  --color-background: #fcf9f8;
+  --color-on-background: #1c1b1b;
+
+  --color-outline: #897173;
+  --color-outline-variant: #dcc0c1;
+
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error: #ffffff;
+  --color-on-error-container: #93000a;
+
+  /* ===== Font Families ===== */
+  --font-headline: "Playfair Display", serif;
+  --font-body: "Inter", sans-serif;
+  --font-label: "Inter", sans-serif;
+
+  /* ===== Border Radius ===== */
+  --radius: 0.25rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+}
+
+/* ===== Base Styles ===== */
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-surface);
+  color: var(--color-on-surface);
+  line-height: 1.6;
+}
+
+h1, h2, h3, .font-serif {
+  font-family: var(--font-headline);
+}
+
+/* Material Symbols */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Editorial shadow utility */
+.editorial-shadow {
+  box-shadow: 0 20px 40px rgba(18, 18, 18, 0.04);
+}
+
+/* Glass blur header */
+.glass-header {
+  background: rgba(252, 249, 248, 0.8);
+  backdrop-filter: blur(20px);
+}
+
+/* Serif italic utility */
+.serif-italic {
+  font-family: "Playfair Display", serif;
+  font-style: italic;
+}
+
+/* Editorial body text */
+.text-editorial-body {
+  line-height: 1.8;
+  font-size: 1.125rem;
+}
+
+/* Drop cap for gated content */
+.editorial-dropcap::first-letter {
+  float: left;
+  font-family: "Playfair Display", serif;
+  font-size: 4.5rem;
+  line-height: 1;
+  padding-right: 0.75rem;
+  color: var(--color-primary);
+}
+
+/* Scrollbar hide utility */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--color-outline-variant); border-radius: 4px; }
+
+/* Interactivity */
+button, a, [role="button"], .cursor-pointer { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+/* ===== Shimmer ===== */
+@keyframes shimmer {
+  0% { background-position: -468px 0; }
+  100% { background-position: 468px 0; }
+}
+
+.animate-shimmer {
+  background: #f6f7f8;
+  background-image: linear-gradient(to right, #f6f7f8 0%, #edeef1 20%, #f6f7f8 40%, #f6f7f8 100%);
+  background-repeat: no-repeat;
+  background-size: 800px 104px;
+  animation: shimmer 1.5s linear infinite forwards;
+}
+
+/* ===== Page Transitions ===== */
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Page-level entry animation */
+main, [data-page] {
+  animation: pageIn 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+/* ===== Scroll-triggered Animations ===== */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.scroll-reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Stagger children animations */
+.stagger-children > * {
+  opacity: 0;
+  animation: slideUp 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0.05s; }
+.stagger-children > *:nth-child(2) { animation-delay: 0.1s; }
+.stagger-children > *:nth-child(3) { animation-delay: 0.15s; }
+.stagger-children > *:nth-child(4) { animation-delay: 0.2s; }
+.stagger-children > *:nth-child(5) { animation-delay: 0.25s; }
+.stagger-children > *:nth-child(6) { animation-delay: 0.3s; }
+.stagger-children > *:nth-child(7) { animation-delay: 0.35s; }
+.stagger-children > *:nth-child(8) { animation-delay: 0.4s; }
+
+/* ===== Card & Element Animations ===== */
+.card-hover {
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              box-shadow 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 24px 48px rgba(18, 18, 18, 0.08);
+}
+
+/* Smooth tab underline transition */
+.tab-indicator {
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Button press effect */
+.press-effect {
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.press-effect:active {
+  transform: scale(0.97);
+}
+
+/* ===== Modal & Overlay Animations ===== */
+.modal-overlay {
+  animation: fadeIn 0.2s ease-out both;
+}
+
+.modal-content {
+  animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.dropdown-enter {
+  animation: slideDown 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+/* ===== Toast Animations ===== */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.toast-enter {
+  animation: toastIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* ===== Image & Media ===== */
+.img-reveal {
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.img-reveal.loaded {
+  opacity: 1;
+}
+
+/* Smooth image zoom on hover */
+.img-zoom {
+  overflow: hidden;
+}
+.img-zoom img {
+  transition: transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.img-zoom:hover img {
+  transform: scale(1.03);
+}
+
+/* ===== Navigation Transitions ===== */
+.nav-link {
+  position: relative;
+  transition: color 0.2s ease;
+}
+
+.nav-link::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: var(--color-primary);
+  transition: width 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.nav-link:hover::after,
+.nav-link.active::after {
+  width: 100%;
+}
+
+/* ===== Skeleton Pulse ===== */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.skeleton-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ===== Ripple Effect ===== */
+.ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, var(--color-primary) 10%, transparent 10.01%);
+  transform: scale(10);
+  opacity: 0;
+  transition: transform 0.5s, opacity 0.5s;
+}
+
+.ripple:active::after {
+  transform: scale(0);
+  opacity: 0.1;
+  transition: 0s;
+}
+
+/* ===== Smooth Accordion ===== */
+.accordion-content {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              opacity 0.25s ease,
+              padding 0.25s ease;
+}
+
+.accordion-content.open {
+  max-height: 500px;
+  opacity: 1;
+}
+
+/* ===== Loading Spinner ===== */
+@keyframes spin-smooth {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  animation: spin-smooth 0.8s linear infinite;
+}
+
+/* ===== Focus Ring ===== */
+*:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ===== Smooth Scroll ===== */
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  main, [data-page] {
+    animation: none;
+  }
+  .scroll-reveal {
+    opacity: 1;
+    transform: none;
+  }
+  .stagger-children > * {
+    opacity: 1;
+    animation: none;
+  }
+}
