@@ -11,7 +11,7 @@ export default function GatedContentPage() {
   return (
     <>
       {/* Minimal Navbar for gated content */}
-      <nav className="bg-stone-50/80 backdrop-blur-xl sticky top-0 z-50">
+      <nav className="bg-surface/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex justify-between items-center w-full px-6 py-4 max-w-7xl mx-auto">
           <Link
             href="/"

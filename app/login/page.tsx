@@ -48,8 +48,13 @@ function LoginForm() {
       router.push("/");
     } catch (err: any) {
       const msg = err.message || "Invalid email or password.";
-      if (msg.toLowerCase().includes("verify") || msg.toLowerCase().includes("not verified") || msg.toLowerCase().includes("email")) {
-        setError("Please verify your email first. Check your inbox for the verification code.");
+      // Django's default SimpleJWT response for invalid creds or inactive (unverified) users
+      if (
+        msg.toLowerCase().includes("no active account found") ||
+        msg.toLowerCase().includes("verify") ||
+        msg.toLowerCase().includes("not verified")
+      ) {
+        setError("Invalid email/password, or email not verified. Please check your credentials or inbox.");
       } else {
         setError(msg);
       }

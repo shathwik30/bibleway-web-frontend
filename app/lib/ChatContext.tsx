@@ -166,7 +166,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const res = await fetchAPI("/chat/conversations/");
       const convs = res?.data?.results || res?.results || res?.data || [];
       setConversations(convs);
-    } catch {}
+    } catch { /* failed to load conversations */ }
   }, []);
 
   const loadMessages = useCallback(async (convId: number) => {
@@ -175,7 +175,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const msgs = res?.data?.results || res?.results || res?.data || [];
       setMessages(prev => ({ ...prev, [convId]: msgs.reverse() }));
       send("join_conversation", { conversation_id: String(convId) });
-    } catch {}
+    } catch { /* failed to load messages */ }
   }, [send]);
 
   const sendMessage = useCallback((convId: number | null, text: string, opts: any = {}) => {
@@ -213,9 +213,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     send("leave_conversation", { conversation_id: String(convId) });
   }, [send]);
 
-  const startConversation = useCallback((userId: string) => {
+  const startConversation = useCallback(async (userId: string) => {
     sendMessage(null, "Hey! \u{1F44B}", { receiverId: userId });
-    setTimeout(loadConversations, 1000);
+    // Wait a bit for the server to create the conversation, then poll until it appears
+    await new Promise(r => setTimeout(r, 500));
+    await loadConversations();
+    // Retry once more if the first attempt was too early
+    await new Promise(r => setTimeout(r, 1500));
+    await loadConversations();
   }, [sendMessage, loadConversations]);
 
   useEffect(() => {

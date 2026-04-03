@@ -5,10 +5,10 @@ import Link from "next/link";
 import { fetchAPI } from "../lib/api";
 
 export default function GlobalSearch() {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [results, setResults] = useState<{ users: any[]; products: any[] }>({ users: [], products: [] });
+  const [results, setResults] = useState<{ users: any[]; products: any[]; bible: any[] }>({ users: [], products: [], bible: [] });
   const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -17,11 +17,23 @@ export default function GlobalSearch() {
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
+        setIsFocused(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Close on Escape
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setIsFocused(false);
+        inputRef.current?.blur();
+      }
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
   }, []);
 
   // Debounce search query
@@ -35,7 +47,7 @@ export default function GlobalSearch() {
   // Execute search when debounced query changes
   useEffect(() => {
     if (!debouncedQuery.trim()) {
-      setResults({ users: [], products: [] });
+      setResults({ users: [], products: [], bible: [] });
       setLoading(false);
       return;
     }
@@ -43,123 +55,153 @@ export default function GlobalSearch() {
     async function performSearch() {
       setLoading(true);
       try {
-        const [usersRes, productsRes] = await Promise.allSettled([
+        const [usersRes, productsRes, bibleRes] = await Promise.allSettled([
           fetchAPI(`/accounts/users/search/?q=${encodeURIComponent(debouncedQuery)}`),
           fetchAPI(`/shop/products/search/?q=${encodeURIComponent(debouncedQuery)}`),
+          fetchAPI(`/bible/search/?q=${encodeURIComponent(debouncedQuery)}`),
         ]);
 
-        // Extract arrays from paginated responses safely
-        let users = [];
-        let products = [];
+        let users: any[] = [];
+        let products: any[] = [];
+        let bible: any[] = [];
 
         if (usersRes.status === "fulfilled" && usersRes.value) {
-           const val = usersRes.value;
-           users = val.results || val.data?.results || (Array.isArray(val.data) ? val.data : []);
+          const val = usersRes.value;
+          users = val.results || val.data?.results || (Array.isArray(val.data) ? val.data : []);
         }
 
         if (productsRes.status === "fulfilled" && productsRes.value) {
-           const val = productsRes.value;
-           products = val.results || val.data?.results || (Array.isArray(val.data) ? val.data : []);
+          const val = productsRes.value;
+          products = val.results || val.data?.results || (Array.isArray(val.data) ? val.data : []);
         }
 
-        setResults({ 
-          users: Array.isArray(users) ? users.slice(0, 5) : [], 
-          products: Array.isArray(products) ? products.slice(0, 5) : [] 
+        if (bibleRes.status === "fulfilled" && bibleRes.value) {
+          const val = bibleRes.value;
+          bible = val.results || val.data?.results || (Array.isArray(val.data) ? val.data : []);
+        }
+
+        setResults({
+          users: Array.isArray(users) ? users.slice(0, 4) : [],
+          products: Array.isArray(products) ? products.slice(0, 4) : [],
+          bible: Array.isArray(bible) ? bible.slice(0, 6) : [],
         });
-      } catch (e) {
-        console.error("Search failed:", e);
-      }
+      } catch { /* search failed */ }
       setLoading(false);
     }
 
     performSearch();
   }, [debouncedQuery]);
 
-  const handleToggle = () => {
-    setIsOpen(true);
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 50);
-  };
-
   const clearSearch = () => {
     setQuery("");
     inputRef.current?.focus();
   };
 
-  const hasResults = results.users.length > 0 || results.products.length > 0;
+  const hasResults = results.users.length > 0 || results.products.length > 0 || results.bible.length > 0;
   const isSearching = loading || (query.trim() !== "" && query !== debouncedQuery);
+  const showDropdown = isFocused && query.trim() !== "";
 
   return (
-    <div className="relative" ref={containerRef}>
-      {/* Trigger Button or Collapsed Input */}
-      {!isOpen ? (
-        <button 
-          onClick={handleToggle}
-          className="p-2 text-on-surface-variant hover:text-primary transition-colors cursor-pointer rounded-full hover:bg-surface-container"
-          aria-label="Search"
-        >
-          <span className="material-symbols-outlined">search</span>
-        </button>
-      ) : (
-        <div className="flex items-center w-64 sm:w-80 bg-surface-container rounded-full px-3 py-1.5 transition-all outline outline-2 outline-primary">
-          <span className="material-symbols-outlined text-on-surface-variant/70 text-sm">search</span>
-          <input 
-            ref={inputRef}
-            type="text"
-            className="bg-transparent border-none outline-none w-full px-2 text-sm text-on-surface placeholder-on-surface-variant/50"
-            placeholder="Search Bibleway..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          {query && (
-             <button onClick={clearSearch} className="cursor-pointer text-on-surface-variant hover:text-on-surface">
-               <span className="material-symbols-outlined text-sm">close</span>
-             </button>
-          )}
-        </div>
-      )}
+    <div className="relative w-full max-w-xl" ref={containerRef}>
+      {/* Search Bar - always visible */}
+      <div className={`flex items-center w-full bg-surface-container rounded-full px-4 py-2 transition-all duration-200 ${
+        isFocused ? "outline outline-2 outline-primary shadow-lg shadow-primary/5" : "hover:bg-surface-container-high"
+      }`}>
+        <span className="material-symbols-outlined text-on-surface-variant/60 text-lg shrink-0">search</span>
+        <input
+          ref={inputRef}
+          type="text"
+          className="bg-transparent border-none outline-none w-full px-3 text-sm text-on-surface placeholder-on-surface-variant/50"
+          placeholder="Search Bible, people, shop..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => setIsFocused(true)}
+        />
+        {query && (
+          <button onClick={clearSearch} className="cursor-pointer text-on-surface-variant hover:text-on-surface shrink-0">
+            <span className="material-symbols-outlined text-sm">close</span>
+          </button>
+        )}
+      </div>
 
       {/* Dropdown Results */}
-      {isOpen && query.trim() !== "" && (
-        <div className="absolute top-12 right-0 sm:right-auto sm:left-0 w-80 sm:w-96 bg-surface-container-lowest rounded-2xl editorial-shadow border border-outline-variant/20 z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="max-h-[min(calc(100vh-100px),500px)] overflow-y-auto custom-scrollbar">
-            
+      {showDropdown && (
+        <div className="absolute top-12 left-0 right-0 bg-surface-container-lowest rounded-2xl editorial-shadow border border-outline-variant/20 z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="max-h-[min(calc(100vh-100px),560px)] overflow-y-auto custom-scrollbar">
+
             {isSearching ? (
               <div className="p-8 flex justify-center items-center flex-col gap-3 text-on-surface-variant">
-                 <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
-                 <p className="text-sm">Searching...</p>
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
+                <p className="text-sm">Searching...</p>
               </div>
             ) : !hasResults ? (
               <div className="p-8 flex justify-center items-center flex-col text-on-surface-variant text-center">
-                 <span className="material-symbols-outlined text-4xl opacity-50 mb-2">search_off</span>
-                 <p className="font-medium">No results found</p>
-                 <p className="text-xs opacity-70 mt-1">Try a different keyword.</p>
+                <span className="material-symbols-outlined text-4xl opacity-50 mb-2">search_off</span>
+                <p className="font-medium">No results found</p>
+                <p className="text-xs opacity-70 mt-1">Try a different keyword.</p>
               </div>
             ) : (
-              <div className="py-2">
+              <div className="py-1">
+                {/* Bible Results - shown first and prominently */}
+                {results.bible.length > 0 && (
+                  <div className="mb-1">
+                    <h4 className="px-4 py-2.5 text-xs font-bold text-primary uppercase tracking-wider bg-primary/5 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-sm">menu_book</span>
+                      Bible
+                    </h4>
+                    <div className="divide-y divide-outline-variant/10">
+                      {results.bible.map((item: any, idx: number) => (
+                        <Link
+                          href={`/bible?highlight=${encodeURIComponent(item.reference || item.verse_reference || "")}`}
+                          key={item.id || idx}
+                          onClick={() => { setIsFocused(false); setQuery(""); }}
+                          className="block px-4 py-3 hover:bg-surface-container-low transition-colors"
+                        >
+                          <div className="flex items-start gap-3">
+                            <span className="material-symbols-outlined text-primary/60 text-lg mt-0.5 shrink-0">book_2</span>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-on-surface">{item.reference || item.verse_reference || item.title || "Verse"}</p>
+                              <p className="text-xs text-on-surface-variant mt-0.5 line-clamp-2">{item.text || item.verse_text || item.snippet || item.content || ""}</p>
+                            </div>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                    {results.bible.length >= 6 && (
+                      <Link
+                        href={`/bible?search=${encodeURIComponent(query)}`}
+                        onClick={() => { setIsFocused(false); }}
+                        className="block px-4 py-2.5 text-xs text-primary font-semibold text-center hover:bg-primary/5 transition-colors"
+                      >
+                        View all Bible results
+                      </Link>
+                    )}
+                  </div>
+                )}
+
                 {/* Users Section */}
                 {results.users.length > 0 && (
-                  <div className="mb-2">
-                    <h4 className="px-4 py-2 text-xs font-bold text-primary uppercase tracking-wider bg-surface-container-low/50">People</h4>
+                  <div className="mb-1">
+                    <h4 className="px-4 py-2.5 text-xs font-bold text-on-surface-variant uppercase tracking-wider bg-surface-container-low/50 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-sm">group</span>
+                      People
+                    </h4>
                     <div className="divide-y divide-outline-variant/10">
-                      {results.users.map(user => (
+                      {results.users.map((user: any) => (
                         <Link
                           href={`/user/${user.id}`}
                           key={user.id}
-                          onClick={() => setIsOpen(false)}
-                          className="flex items-center gap-3 px-4 py-3 hover:bg-surface-container-low transition-colors"
+                          onClick={() => { setIsFocused(false); setQuery(""); }}
+                          className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-container-low transition-colors"
                         >
-                           <div className="w-10 h-10 rounded-full bg-surface-container-high overflow-hidden border border-outline-variant/20 flex items-center justify-center flex-shrink-0">
-                             {user.profile_photo ? (
-                               <img src={user.profile_photo} alt={user.full_name} className="w-full h-full object-cover" />
-                             ) : (
-                               <span className="material-symbols-outlined text-on-surface-variant text-sm">person</span>
-                             )}
-                           </div>
-                           <div className="flex flex-col">
-                             <span className="text-sm font-bold text-on-surface leading-tight">{user.full_name}</span>
-                           </div>
+                          <div className="w-9 h-9 rounded-full bg-surface-container-high overflow-hidden border border-outline-variant/20 flex items-center justify-center shrink-0">
+                            {user.profile_photo ? (
+                              <img src={user.profile_photo} alt={user.full_name} className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="material-symbols-outlined text-on-surface-variant text-sm">person</span>
+                            )}
+                          </div>
+                          <span className="text-sm font-semibold text-on-surface">{user.full_name}</span>
                         </Link>
                       ))}
                     </div>
@@ -169,26 +211,29 @@ export default function GlobalSearch() {
                 {/* Products Section */}
                 {results.products.length > 0 && (
                   <div>
-                    <h4 className="px-4 py-2 text-xs font-bold text-secondary uppercase tracking-wider bg-surface-container-low/50">Shop</h4>
+                    <h4 className="px-4 py-2.5 text-xs font-bold text-on-surface-variant uppercase tracking-wider bg-surface-container-low/50 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-sm">shopping_bag</span>
+                      Shop
+                    </h4>
                     <div className="divide-y divide-outline-variant/10">
-                      {results.products.map(product => (
+                      {results.products.map((product: any) => (
                         <Link
                           href={`/shop/product/${product.id}`}
                           key={product.id}
-                          onClick={() => setIsOpen(false)}
-                          className="flex items-center gap-3 px-4 py-3 hover:bg-surface-container-low transition-colors"
+                          onClick={() => { setIsFocused(false); setQuery(""); }}
+                          className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-container-low transition-colors"
                         >
-                           <div className="w-12 h-12 bg-surface-container overflow-hidden rounded-md border border-outline-variant/20 flex items-center justify-center flex-shrink-0 relative">
-                             {product.image ? (
-                               <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
-                             ) : (
-                               <span className="material-symbols-outlined text-on-surface-variant">shopping_bag</span>
-                             )}
-                           </div>
-                           <div className="flex flex-col flex-1 min-w-0">
-                             <span className="text-sm font-bold text-on-surface truncate">{product.name}</span>
-                             <span className="text-xs text-primary font-medium mt-0.5">${product.price}</span>
-                           </div>
+                          <div className="w-10 h-10 bg-surface-container overflow-hidden rounded-md border border-outline-variant/20 flex items-center justify-center shrink-0">
+                            {(product.cover_image || product.image) ? (
+                              <img src={product.cover_image || product.image} alt={product.title} className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="material-symbols-outlined text-on-surface-variant text-sm">shopping_bag</span>
+                            )}
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-sm font-semibold text-on-surface truncate">{product.title || product.name}</span>
+                            <span className="text-xs text-primary font-medium">{product.is_free ? "Free" : product.price_tier || (product.price ? `$${product.price}` : "")}</span>
+                          </div>
                         </Link>
                       ))}
                     </div>
@@ -196,12 +241,12 @@ export default function GlobalSearch() {
                 )}
               </div>
             )}
-            
+
           </div>
-          
+
           {hasResults && (
-            <div className="p-3 border-t border-outline-variant/10 bg-surface-container-lowest text-center">
-              <span className="text-xs text-on-surface-variant">Press Esc or click outside to close</span>
+            <div className="p-2.5 border-t border-outline-variant/10 bg-surface-container-lowest text-center">
+              <span className="text-xs text-on-surface-variant">Press Esc to close</span>
             </div>
           )}
         </div>

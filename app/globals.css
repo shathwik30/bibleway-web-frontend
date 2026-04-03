@@ -364,6 +364,46 @@ html {
   scroll-behavior: smooth;
 }
 
+/* ===== Dark Theme Overrides ===== */
+[data-theme="dark"] {
+  --color-primary: #ffb2b9;
+  --color-primary-container: #a13b4b;
+  --color-on-primary: #5f1124;
+  --color-on-primary-container: #ffdadc;
+  --color-surface: #1c1b1b;
+  --color-surface-bright: #3c3b3b;
+  --color-surface-dim: #1c1b1b;
+  --color-surface-container: #201f1f;
+  --color-surface-container-low: #1c1b1b;
+  --color-surface-container-high: #2b2a2a;
+  --color-surface-container-highest: #363535;
+  --color-surface-container-lowest: #0e0e0e;
+  --color-on-surface: #e5e2e1;
+  --color-on-surface-variant: #dcc0c1;
+  --color-background: #1c1b1b;
+  --color-on-background: #e5e2e1;
+  --color-outline: #a08a8b;
+  --color-outline-variant: #564243;
+  --color-tertiary-fixed: #ffdf9e;
+  --color-secondary-container: #364763;
+  --color-on-secondary-container: #d6e3ff;
+  --color-inverse-surface: #e5e2e1;
+  --color-inverse-on-surface: #313030;
+  --color-error: #ffb4ab;
+  --color-error-container: #93000a;
+  --color-on-error: #690005;
+  --color-on-error-container: #ffdad6;
+}
+
+[data-theme="dark"] .glass-header {
+  background: rgba(28, 27, 27, 0.8);
+}
+
+[data-theme="dark"] .animate-shimmer {
+  background: #2b2a2a;
+  background-image: linear-gradient(to right, #2b2a2a 0%, #363535 20%, #2b2a2a 40%, #2b2a2a 100%);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

@@ -55,9 +55,7 @@ export async function fetchAPI(endpoint: string, options: RequestInit = {}) {
           localStorage.removeItem("refresh_token");
           window.location.href = "/login";
         }
-      } catch (e) {
-        console.error("Token refresh failed:", e);
-      }
+      } catch { /* token refresh failed */ }
     }
   }
 

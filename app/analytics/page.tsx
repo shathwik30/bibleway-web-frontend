@@ -30,7 +30,7 @@ export default function AnalyticsPage() {
         if (analyticsRes) setAnalytics(analyticsRes.data || analyticsRes);
         if (boostsRes) setBoosts(boostsRes?.data?.results || boostsRes?.results || boostsRes?.data || []);
       } catch (err) {
-        console.error("Failed to load analytics:", err);
+        /* error */
       } finally {
         setLoading(false);
       }
@@ -63,8 +63,8 @@ export default function AnalyticsPage() {
     try {
       const res = await fetchAPI(`/analytics/posts/${postId}/`);
       setPostAnalytics(res.data || res);
-    } catch (err) {
-      console.error("Failed to load post analytics:", err);
+    } catch {
+      /* error */
       setPostAnalytics(null);
     } finally {
       setPostAnalyticsLoading(false);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import MainLayout from "../../components/MainLayout";
@@ -25,7 +25,26 @@ export default function SinglePostPage() {
   const [postingComment, setPostingComment] = useState(false);
   const [openReaction, setOpenReaction] = useState(false);
   const reactionRef = useRef<HTMLDivElement>(null);
-  const currentUserId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [reacting, setReacting] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [postingReply, setPostingReply] = useState(false);
+  const [repliesData, setRepliesData] = useState<Record<string, any[]>>({});
+  const [repliesLoading, setRepliesLoading] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => { setCurrentUserId(localStorage.getItem("user_id")); }, []);
+
+  // Close reaction picker on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (reactionRef.current && !reactionRef.current.contains(e.target as Node)) {
+        setOpenReaction(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
   useEffect(() => {
     if (!postId) return;
@@ -35,8 +54,8 @@ export default function SinglePostPage() {
         const data = res.data || res;
         setPost(data);
         loadComments();
-      } catch (err) {
-        console.error("Failed to load post:", err);
+      } catch {
+        /* failed to load post */
       } finally {
         setLoading(false);
       }
@@ -49,28 +68,44 @@ export default function SinglePostPage() {
     try {
       const res = await fetchAPI(`/social/posts/${postId}/comments/`);
       setComments(res?.data?.results ?? res?.results ?? []);
-    } catch (err) {
-      console.error("Failed to load comments:", err);
-    } finally {
+    } catch { /* failed to load comments */ } finally {
       setCommentsLoading(false);
     }
   }
 
   async function handleReact(emojiType: string) {
+    if (reacting) return;
+    setReacting(true);
     setOpenReaction(false);
+
+    const prevCount = post?.reaction_count || 0;
+    const prevReaction = post?.user_reaction;
+    const isRemoving = prevReaction === emojiType;
+
+    // Optimistic update
+    setPost((p: any) => ({
+      ...p,
+      reaction_count: isRemoving ? Math.max(0, prevCount - 1) : prevCount + (prevReaction ? 0 : 1),
+      user_reaction: isRemoving ? null : emojiType,
+    }));
+
     try {
       const res = await fetchAPI(`/social/posts/${postId}/react/`, {
         method: "POST",
         body: JSON.stringify({ emoji_type: emojiType }),
       });
       const wasRemoved = res?.message === "Reaction removed.";
+      const serverCount = res?.data?.reaction_count;
       setPost((p: any) => ({
         ...p,
-        reaction_count: wasRemoved ? Math.max(0, (p.reaction_count || 0) - 1) : (p.reaction_count || 0) + 1,
+        reaction_count: serverCount !== undefined ? serverCount : p.reaction_count,
         user_reaction: wasRemoved ? null : emojiType,
       }));
-    } catch (err) {
-      console.error("React failed:", err);
+    } catch {
+      // Revert on error
+      setPost((p: any) => ({ ...p, reaction_count: prevCount, user_reaction: prevReaction }));
+    } finally {
+      setReacting(false);
     }
   }
 
@@ -85,9 +120,7 @@ export default function SinglePostPage() {
       setNewComment("");
       await loadComments();
       setPost((p: any) => ({ ...p, comment_count: (p.comment_count || 0) + 1 }));
-    } catch (err) {
-      console.error("Failed to post comment:", err);
-    } finally {
+    } catch { /* failed to post comment */ } finally {
       setPostingComment(false);
     }
   }
@@ -98,9 +131,42 @@ export default function SinglePostPage() {
       await fetchAPI(`/social/comments/${commentId}/`, { method: "DELETE" });
       setComments((prev) => prev.filter((c) => c.id !== commentId));
       setPost((p: any) => ({ ...p, comment_count: Math.max(0, (p.comment_count || 0) - 1) }));
-    } catch (err) {
-      console.error("Failed to delete comment:", err);
+    } catch { /* failed to delete comment */ }
+  }
+
+  async function loadReplies(commentId: string) {
+    setRepliesLoading(commentId);
+    try {
+      const res = await fetchAPI(`/social/comments/${commentId}/replies/`);
+      setRepliesData((prev) => ({ ...prev, [commentId]: res?.data?.results ?? res?.results ?? [] }));
+    } catch { /* failed to load replies */ } finally {
+      setRepliesLoading(null);
     }
+  }
+
+  async function handlePostReply(commentId: string) {
+    if (!replyText.trim() || postingReply) return;
+    setPostingReply(true);
+    try {
+      await fetchAPI(`/social/comments/${commentId}/replies/`, { method: "POST", body: JSON.stringify({ text: replyText.trim() }) });
+      setReplyText("");
+      setReplyingTo(null);
+      await loadReplies(commentId);
+    } catch { /* failed to post reply */ } finally {
+      setPostingReply(false);
+    }
+  }
+
+  async function handleShare() {
+    const url = `${window.location.origin}/post/${postId}`;
+    try {
+      await fetchAPI(`/social/posts/${postId}/share/`).catch(() => null);
+      await navigator.clipboard.writeText(url);
+    } catch {
+      await navigator.clipboard.writeText(url).catch(() => { prompt("Copy this link:", url); });
+    }
+    setToast("Link copied to clipboard!");
+    setTimeout(() => setToast(null), 2500);
   }
 
   if (loading) {
@@ -171,7 +237,7 @@ export default function SinglePostPage() {
                   <span className="text-sm font-medium">{post.reaction_count || 0}</span>
                 </button>
                 {openReaction && (
-                  <div className="absolute bottom-full left-0 mb-2 bg-white rounded-full shadow-xl border p-1.5 flex items-center gap-1 z-50">
+                  <div className="absolute bottom-full left-0 mb-2 bg-surface-container-lowest rounded-full shadow-xl border border-outline-variant/20 p-1.5 flex items-center gap-1 z-50">
                     {REACTIONS.map((r) => (
                       <button key={r.type} onClick={() => handleReact(r.type)} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high hover:scale-125 transition-all">
                         <span className="text-xl">{r.emoji}</span>
@@ -185,6 +251,9 @@ export default function SinglePostPage() {
                 <span className="text-sm font-medium">{post.comment_count || 0}</span>
               </span>
             </div>
+            <button onClick={handleShare} className="text-on-surface-variant hover:text-primary transition-colors">
+              <span className="material-symbols-outlined">share</span>
+            </button>
           </div>
         </article>
 
@@ -212,22 +281,51 @@ export default function SinglePostPage() {
           ) : (
             <div className="space-y-3">
               {comments.map((c: any) => (
-                <div key={c.id} className="bg-surface-container-low rounded-xl px-4 py-3">
-                  <div className="flex justify-between items-start">
-                    <Link href={`/user/${c.user?.id}`} className="font-semibold text-sm hover:text-primary">{c.user?.full_name || "User"}</Link>
-                    {currentUserId && c.user?.id === currentUserId && (
-                      <button onClick={() => handleDeleteComment(c.id)} className="text-on-surface-variant hover:text-red-500 transition-colors">
-                        <span className="material-symbols-outlined text-xs">delete</span>
-                      </button>
-                    )}
+                <div key={c.id}>
+                  <div className="bg-surface-container-low rounded-xl px-4 py-3">
+                    <div className="flex justify-between items-start">
+                      <Link href={`/user/${c.user?.id}`} className="font-semibold text-sm hover:text-primary">{c.user?.full_name || "User"}</Link>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => { setReplyingTo(replyingTo === c.id ? null : c.id); if (!repliesData[c.id]) loadReplies(c.id); }} className="text-on-surface-variant hover:text-primary transition-colors" title="Reply">
+                          <span className="material-symbols-outlined text-xs">reply</span>
+                        </button>
+                        {currentUserId && c.user?.id === currentUserId && (
+                          <button onClick={() => handleDeleteComment(c.id)} className="text-on-surface-variant hover:text-red-500 transition-colors" title="Delete">
+                            <span className="material-symbols-outlined text-xs">delete</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-sm text-on-surface-variant">{c.text}</p>
                   </div>
-                  <p className="text-sm text-on-surface-variant">{c.text}</p>
+                  {replyingTo === c.id && (
+                    <div className="ml-8 mt-2 space-y-2">
+                      {repliesLoading === c.id ? (
+                        <div className="flex justify-center py-1"><div className="animate-spin rounded-full h-4 w-4 border-t-2 border-primary"></div></div>
+                      ) : (repliesData[c.id] || []).map((r: any) => (
+                        <div key={r.id} className="bg-surface-container-high rounded-lg px-3 py-1.5">
+                          <Link href={`/user/${r.user?.id}`} className="font-semibold text-xs hover:text-primary">{r.user?.full_name || "User"}</Link>
+                          <p className="text-xs text-on-surface-variant">{r.text}</p>
+                        </div>
+                      ))}
+                      <div className="flex gap-2">
+                        <input type="text" placeholder="Write a reply..." value={replyText} onChange={(e) => setReplyText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handlePostReply(c.id)} className="flex-1 bg-surface-container-high rounded-lg px-3 py-1.5 text-xs" />
+                        <button onClick={() => handlePostReply(c.id)} disabled={!replyText.trim() || postingReply} className="text-primary disabled:opacity-30"><span className="material-symbols-outlined text-sm">send</span></button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {toast && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-on-surface text-surface px-6 py-3 rounded-full shadow-xl z-[20000] text-sm font-medium">
+          {toast}
+        </div>
+      )}
     </MainLayout>
   );
 }

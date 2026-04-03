@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { I18nProvider } from "./lib/i18n";
 import { ChatProvider } from "./lib/ChatContext";
+import { ThemeProvider } from "./lib/ThemeContext";
+import QueryProvider from "./lib/QueryProvider";
 
 export const metadata: Metadata = {
   title: "Bibleway — The Modern Sanctuary",
@@ -27,7 +29,7 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-surface text-on-surface font-body antialiased">
-        <I18nProvider><ChatProvider>{children}</ChatProvider></I18nProvider>
+        <QueryProvider><ThemeProvider><I18nProvider><ChatProvider>{children}</ChatProvider></I18nProvider></ThemeProvider></QueryProvider>
       </body>
     </html>
   );

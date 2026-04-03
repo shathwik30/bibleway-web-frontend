@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { fetchAPI } from "../lib/api";
+import ImageCropper from "./ImageCropper";
 
 interface PostingModalProps {
   activeTab: "post" | "prayer";
@@ -9,7 +11,8 @@ interface PostingModalProps {
   onPostCreated: () => void;
 }
 
-export default function PostingModal({ activeTab, onClose, onPostCreated }: PostingModalProps) {
+export default function PostingModal({ activeTab: initialTab, onClose, onPostCreated }: PostingModalProps) {
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [postTitle, setPostTitle] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("draft_title") || "";
     return "";
@@ -19,34 +22,102 @@ export default function PostingModal({ activeTab, onClose, onPostCreated }: Post
     return "";
   });
   const [posting, setPosting] = useState(false);
-  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
-  const [mediaId, setMediaId] = useState<string | null>(null);
+  const [mediaPreviews, setMediaPreviews] = useState<string[]>([]);
+  const [mediaKeys, setMediaKeys] = useState<string[]>([]);
+  const [mediaTypes, setMediaTypes] = useState<string[]>([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [cropQueue, setCropQueue] = useState<{ file: File; src: string }[]>([]);
+  const [croppedFiles, setCroppedFiles] = useState<File[]>([]);
   const mediaInputRef = useRef<HTMLInputElement>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   const userName = typeof window !== "undefined"
     ? (() => { try { return JSON.parse(localStorage.getItem("user") || "{}").full_name; } catch { return null; } })()
     : null;
 
-  async function handleMediaUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function handleMediaSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    if (mediaInputRef.current) mediaInputRef.current.value = "";
+
+    const remaining = 10 - mediaKeys.length;
+    const selected = Array.from(files).slice(0, remaining);
+    if (selected.length === 0) return;
+
+    // Videos go straight to upload, images go to crop queue
+    const videos = selected.filter((f) => f.type.startsWith("video/"));
+    const images = selected.filter((f) => !f.type.startsWith("video/"));
+
+    if (videos.length > 0) uploadFiles(videos);
+
+    if (images.length > 0) {
+      const queue = images.map((f) => ({ file: f, src: URL.createObjectURL(f) }));
+      setCropQueue(queue);
+    }
+  }
+
+  function handleCropDone(blob: Blob) {
+    const current = cropQueue[0];
+    const file = new File([blob], current.file.name, { type: "image/jpeg" });
+    setCroppedFiles((prev) => [...prev, file]);
+    URL.revokeObjectURL(current.src);
+    const remaining = cropQueue.slice(1);
+    setCropQueue(remaining);
+
+    // If no more to crop, upload all cropped files
+    if (remaining.length === 0) {
+      setCroppedFiles((prev) => {
+        const allFiles = [...prev, file];
+        uploadFiles(allFiles);
+        return [];
+      });
+    }
+  }
+
+  function handleCropSkip() {
+    const current = cropQueue[0];
+    // Use original file without cropping
+    setCroppedFiles((prev) => [...prev, current.file]);
+    URL.revokeObjectURL(current.src);
+    const remaining = cropQueue.slice(1);
+    setCropQueue(remaining);
+
+    if (remaining.length === 0) {
+      setCroppedFiles((prev) => {
+        const allFiles = [...prev, current.file];
+        uploadFiles(allFiles);
+        return [];
+      });
+    }
+  }
+
+  async function uploadFiles(files: File[]) {
     setUploadingMedia(true);
-    setMediaPreview(URL.createObjectURL(file));
+    const newPreviews = files.map((f) => URL.createObjectURL(f));
+    setMediaPreviews((prev) => [...prev, ...newPreviews]);
+
     try {
       const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetchAPI("/social/media/upload/", {
-        method: "POST",
-        body: formData,
-      });
-      setMediaId(res.data?.id || res.id);
-    } catch (err) {
-      console.error("Media upload failed:", err);
-      setMediaPreview(null);
+      files.forEach((file) => formData.append("files", file));
+      const res = await fetchAPI("/social/media/upload/", { method: "POST", body: formData });
+      const results: { key: string; url: string }[] = res.data || res || [];
+      const newKeys = results.map((r) => r.key);
+      const newTypes = files.map((f) => f.type.startsWith("video/") ? "video" : "image");
+      setMediaKeys((prev) => [...prev, ...newKeys]);
+      setMediaTypes((prev) => [...prev, ...newTypes]);
+    } catch {
+      setMediaPreviews((prev) => prev.slice(0, prev.length - newPreviews.length));
     } finally {
       setUploadingMedia(false);
     }
+  }
+
+  function removeMedia(index: number) {
+    setMediaPreviews((prev) => prev.filter((_, i) => i !== index));
+    setMediaKeys((prev) => prev.filter((_, i) => i !== index));
+    setMediaTypes((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleCreatePost() {
@@ -57,12 +128,12 @@ export default function PostingModal({ activeTab, onClose, onPostCreated }: Post
       const body: Record<string, unknown> = activeTab === "post"
         ? { text_content: postContent }
         : { title: postTitle || "Prayer Request", description: postContent };
-      if (mediaId) body.media_ids = [mediaId];
+      if (mediaKeys.length > 0) {
+        body.media_keys = mediaKeys;
+        body.media_types = mediaTypes;
+      }
 
-      await fetchAPI(endpoint, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      await fetchAPI(endpoint, { method: "POST", body: JSON.stringify(body) });
 
       if (typeof window !== "undefined") {
         localStorage.removeItem("draft_content");
@@ -70,95 +141,135 @@ export default function PostingModal({ activeTab, onClose, onPostCreated }: Post
       }
       onClose();
       onPostCreated();
-    } catch (err) {
-      console.error("Failed to create post:", err);
-    } finally {
+    } catch { /* failed to create post */ } finally {
       setPosting(false);
     }
   }
 
-  return (
+  // Close on Escape
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  const modal = (
     <div
-      className="fixed inset-0 bg-stone-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4 sm:p-6 modal-overlay"
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 sm:p-6"
       onClick={onClose}
     >
       <div
-        className="bg-surface-container-lowest w-full max-w-2xl rounded-[2.5rem] overflow-hidden editorial-shadow shadow-2xl modal-content"
+        className="bg-surface-container-lowest w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl border border-outline-variant/10 max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-8 pt-8 pb-4 flex items-center justify-between">
+        {/* Header */}
+        <div className="px-6 sm:px-8 pt-6 pb-3 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20">
-              <span className="material-symbols-outlined text-primary">person</span>
+            <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20">
+              <span className="material-symbols-outlined text-primary text-xl">
+                {activeTab === "post" ? "edit" : "folded_hands"}
+              </span>
             </div>
             <div>
-              <h2 className="text-xl font-headline text-on-surface">
+              <h2 className="text-lg font-headline text-on-surface">
                 {activeTab === "post" ? "Create Post" : "Prayer Request"}
               </h2>
-              <p className="text-xs text-on-surface-variant font-medium uppercase tracking-wider">
+              <p className="text-xs text-on-surface-variant font-medium">
                 Posting as <span className="text-primary">{userName || "You"}</span>
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
+            className="w-9 h-9 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all"
           >
-            <span className="material-symbols-outlined">close</span>
+            <span className="material-symbols-outlined text-xl">close</span>
           </button>
         </div>
 
-        <div className="px-8 pb-8 pt-4 space-y-6">
-          {mediaPreview && (
-            <div className="relative">
-              <img src={mediaPreview} alt="Preview" className="w-full max-h-48 object-cover rounded-xl" />
-              <button onClick={() => { setMediaPreview(null); setMediaId(null); }} className="absolute top-2 right-2 w-7 h-7 bg-black/50 rounded-full flex items-center justify-center text-white hover:bg-black/70">
-                <span className="material-symbols-outlined text-sm">close</span>
-              </button>
+        {/* Tab Switcher */}
+        <div className="px-6 sm:px-8 flex gap-4 border-b border-outline-variant/10">
+          <button
+            onClick={() => setActiveTab("post")}
+            className={`pb-2.5 text-sm font-semibold transition-all border-b-2 ${activeTab === "post" ? "border-primary text-primary" : "border-transparent text-on-surface-variant hover:text-on-surface"}`}
+          >
+            Post
+          </button>
+          <button
+            onClick={() => setActiveTab("prayer")}
+            className={`pb-2.5 text-sm font-semibold transition-all border-b-2 ${activeTab === "prayer" ? "border-primary text-primary" : "border-transparent text-on-surface-variant hover:text-on-surface"}`}
+          >
+            Prayer Request
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 sm:px-8 py-6 space-y-4 overflow-y-auto flex-1">
+          {mediaPreviews.length > 0 && (
+            <div className="grid grid-cols-2 gap-2">
+              {mediaPreviews.map((preview, i) => (
+                <div key={i} className="relative">
+                  <img src={preview} alt={`Preview ${i + 1}`} className="w-full h-32 object-cover rounded-xl" />
+                  <button onClick={() => removeMedia(i)} className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/50 rounded-full flex items-center justify-center text-white hover:bg-black/70">
+                    <span className="material-symbols-outlined text-xs">close</span>
+                  </button>
+                </div>
+              ))}
             </div>
           )}
 
           {activeTab === "prayer" && (
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Subject of your prayer..."
-                value={postTitle}
-                onChange={(e) => { setPostTitle(e.target.value); localStorage.setItem("draft_title", e.target.value); }}
-                className="w-full bg-transparent border-b border-outline-variant/30 px-0 py-3 focus:outline-none focus:border-primary transition-colors text-2xl font-headline placeholder:text-on-surface-variant/30"
-              />
-            </div>
+            <input
+              type="text"
+              placeholder="Subject of your prayer..."
+              value={postTitle}
+              onChange={(e) => { setPostTitle(e.target.value); localStorage.setItem("draft_title", e.target.value); }}
+              className="w-full bg-transparent border-b border-outline-variant/30 px-0 py-3 focus:outline-none focus:border-primary transition-colors text-xl font-headline placeholder:text-on-surface-variant/30 text-on-surface"
+            />
           )}
 
-          <div className="relative min-h-[240px]">
-            <textarea
-              rows={8}
-              placeholder={activeTab === "post" ? "What's on your heart today?" : "Describe your prayer request..."}
-              value={postContent}
-              onChange={(e) => { setPostContent(e.target.value); localStorage.setItem("draft_content", e.target.value); }}
-              className="w-full bg-transparent p-0 focus:outline-none resize-none text-xl md:text-2xl font-body leading-relaxed placeholder:text-on-surface-variant/20 no-scrollbar"
-            />
-          </div>
+          <textarea
+            rows={6}
+            placeholder={activeTab === "post" ? "What's on your heart today?" : "Describe your prayer request..."}
+            value={postContent}
+            onChange={(e) => { setPostContent(e.target.value); localStorage.setItem("draft_content", e.target.value); }}
+            className="w-full bg-transparent p-0 focus:outline-none resize-none text-lg font-body leading-relaxed placeholder:text-on-surface-variant/20 text-on-surface no-scrollbar min-h-[160px]"
+          />
+        </div>
 
-          <div className="flex items-center justify-between pt-6 border-t border-outline-variant/10">
-            <div className="flex gap-2">
-              <button onClick={() => mediaInputRef.current?.click()} className="flex items-center gap-3 text-on-surface-variant font-bold text-xs uppercase tracking-widest py-3 px-5 rounded-full hover:bg-surface-container-high transition-all">
-                <span className="material-symbols-outlined text-lg">{uploadingMedia ? "hourglass_empty" : "image"}</span>
-                {uploadingMedia ? "Uploading..." : "Add Media"}
-              </button>
-              <input type="file" ref={mediaInputRef} onChange={handleMediaUpload} className="hidden" accept="image/*,video/*" />
-            </div>
-
-            <button
-              onClick={handleCreatePost}
-              disabled={!postContent.trim() || posting}
-              className="bg-linear-to-br from-primary to-primary-container text-on-primary px-10 py-3.5 rounded-full font-bold uppercase tracking-[0.15em] text-[11px] disabled:opacity-30 shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
-            >
-              {posting ? "Publishing..." : activeTab === "post" ? "Publish Post" : "Submit Request"}
+        {/* Footer */}
+        <div className="px-6 sm:px-8 py-4 border-t border-outline-variant/10 flex items-center justify-between shrink-0">
+          <div className="flex gap-2">
+            <button onClick={() => mediaInputRef.current?.click()} disabled={mediaKeys.length >= 10} className="flex items-center gap-2 text-on-surface-variant font-bold text-xs uppercase tracking-widest py-2.5 px-4 rounded-full hover:bg-surface-container-high transition-all disabled:opacity-30">
+              <span className="material-symbols-outlined text-lg">{uploadingMedia ? "hourglass_empty" : "image"}</span>
+              {uploadingMedia ? "Uploading..." : mediaKeys.length > 0 ? `Media (${mediaKeys.length}/10)` : "Media"}
             </button>
+            <input type="file" ref={mediaInputRef} onChange={handleMediaSelect} className="hidden" accept="image/*,video/*" multiple />
           </div>
+          <button
+            onClick={handleCreatePost}
+            disabled={!postContent.trim() || posting}
+            className="bg-primary text-on-primary px-8 py-3 rounded-full font-bold uppercase tracking-widest text-[11px] disabled:opacity-30 shadow-lg shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all"
+          >
+            {posting ? "Publishing..." : activeTab === "post" ? "Publish" : "Submit"}
+          </button>
         </div>
       </div>
     </div>
+  );
+
+  // Render via portal to escape overflow-hidden containers
+  if (!mounted) return null;
+  return (
+    <>
+      {createPortal(modal, document.body)}
+      {cropQueue.length > 0 && (
+        <ImageCropper
+          imageSrc={cropQueue[0].src}
+          onCropComplete={handleCropDone}
+          onCancel={handleCropSkip}
+        />
+      )}
+    </>
   );
 }

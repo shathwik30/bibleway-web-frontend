@@ -11,13 +11,13 @@ export default function BottomNav() {
   const bottomLinks = [
     { href: "/", label: t("feed.home"), icon: "home" },
     { href: "/bible", label: t("bible.bible"), icon: "menu_book" },
-    { href: "/bible?tab=study", label: t("bible.study"), icon: "school" },
+    { href: "/games", label: "Games", icon: "sports_esports" },
     { href: "/chat", label: "Chat", icon: "chat" },
     { href: "/profile", label: t("profile.profile"), icon: "person" },
   ];
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-6 pt-2 bg-stone-50/90 backdrop-blur-2xl rounded-t-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.03)]">
+    <nav className="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-6 pt-2 bg-surface/90 backdrop-blur-2xl rounded-t-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.03)] border-t border-outline-variant/10">
       {bottomLinks.map((link) => {
         const isActive = pathname === link.href;
         return (
@@ -27,7 +27,7 @@ export default function BottomNav() {
             className={`flex flex-col items-center justify-center px-3 py-1.5 transition-transform hover:scale-105 ${
               isActive
                 ? "bg-primary/10 text-primary rounded-xl"
-                : "text-stone-400"
+                : "text-on-surface-variant"
             }`}
           >
             <span

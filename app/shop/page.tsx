@@ -18,9 +18,14 @@ export default function ShopPage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Server-side search
+  // Server-side search — also reload all products when query is cleared
+  const [allProducts, setAllProducts] = useState<any[]>([]);
   useEffect(() => {
-    if (!debouncedQuery.trim()) return;
+    if (!debouncedQuery.trim()) {
+      // Restore full product list when search is cleared
+      if (allProducts.length > 0) setProducts(allProducts);
+      return;
+    }
     async function serverSearch() {
       try {
         const res = await fetchAPI(`/shop/products/search/?q=${encodeURIComponent(debouncedQuery)}`);
@@ -38,10 +43,10 @@ export default function ShopPage() {
       setLoading(true);
       try {
         const res = await fetchAPI("/shop/products/");
-        setProducts(res?.data?.results || res?.results || []);
-      } catch (err) {
-        console.error("Failed to load products:", err);
-      } finally {
+        const items = res?.data?.results || res?.results || [];
+        setProducts(items);
+        setAllProducts(items);
+      } catch { /* failed to load products */ } finally {
         setLoading(false);
       }
     }
@@ -133,9 +138,7 @@ export default function ShopPage() {
                 <Link
                   href={`/shop/product/${product.id}`}
                   key={product.id}
-                  className={`group flex flex-col ${
-                    i % 2 === 1 ? "mt-4 lg:mt-8" : ""
-                  }`}
+                  className="group flex flex-col"
                 >
                   <div className="relative aspect-[3/4] mb-6 overflow-hidden rounded-xl bg-surface-container-low transition-all duration-500 group-hover:shadow-[0_20px_40px_rgba(18,18,18,0.08)] group-hover:-translate-y-1 flex items-center justify-center img-zoom">
                     {product.cover_image ? (

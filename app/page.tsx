@@ -1,13 +1,17 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import MainLayout from "./components/MainLayout";
 import { fetchAPI } from "./lib/api";
 import Shimmer from "./components/Shimmer";
 import FeedCard from "./components/FeedCard";
 import PostingModal from "./components/PostingModal";
+import RecommendedPeople from "./components/RecommendedPeople";
 import { useTranslation } from "./lib/i18n";
+import VerseOnboarding from "./components/VerseOnboarding";
+import VerseShareDropdown from "./components/VerseShareCard";
 
 const BACKGROUNDS = [
   "mountain-bg.png",
@@ -22,21 +26,42 @@ export default function HomePage() {
   const [feedPosts, setFeedPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [feedError, setFeedError] = useState<string | null>(null);
-  const [verseData, setVerseData] = useState({
-    text: '"Be still, and know that I am God; I will be exalted among the nations, I will be exalted in the earth."',
-    reference: "\u2014 Psalm 46:10",
-  });
+  const [verseData, setVerseData] = useState<{ text: string; reference: string } | null>(null);
+  const [verseLoading, setVerseLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Verse onboarding
+  const [showVerseOnboarding, setShowVerseOnboarding] = useState(false);
+  const [showVerseShare, setShowVerseShare] = useState(false);
+  const verseShareRef = useRef<HTMLDivElement>(null);
 
   // UI State
   const [openReactionId, setOpenReactionId] = useState<string | null>(null);
   const [animatingReaction, setAnimatingReaction] = useState<{ postId: string; emoji: string } | null>(null);
   const [showPostingModal, setShowPostingModal] = useState(false);
-  const [shareToast, setShareToast] = useState(false);
   const [reportTarget, setReportTarget] = useState<{ type: string; id: string } | null>(null);
   const [reportReason, setReportReason] = useState("");
+  const [reportCategory, setReportCategory] = useState("inappropriate");
   const [reportSubmitting, setReportSubmitting] = useState(false);
+
+  // Reaction debounce - prevent rapid-fire clicks
+  const reactingPosts = useRef<Set<string>>(new Set());
+
+  // Unified toast
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  function showToast(msg: string) {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast(msg);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+  }
+
+  // Infinite scroll state
+  const [nextPageUrl, setNextPageUrl] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
 
   // View tracking
   const viewedPosts = useRef<Set<string>>(new Set());
@@ -48,14 +73,18 @@ export default function HomePage() {
 
   const { t } = useTranslation();
   const reactionRef = useRef<HTMLDivElement>(null);
-  const [bgIndex] = useState(() => typeof window !== "undefined" ? new Date().getDay() % BACKGROUNDS.length : 0);
+  const [bgIndex, setBgIndex] = useState(0);
+  useEffect(() => { setBgIndex(new Date().getDay() % BACKGROUNDS.length); }, []);
   const currentBg = BACKGROUNDS[bgIndex];
 
-  // Close reaction picker on outside click
+  // Close reaction picker + verse share on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (reactionRef.current && !reactionRef.current.contains(e.target as Node)) {
         setOpenReactionId(null);
+      }
+      if (verseShareRef.current && !verseShareRef.current.contains(e.target as Node)) {
+        setShowVerseShare(false);
       }
     }
     document.addEventListener("mousedown", handleClick);
@@ -86,16 +115,20 @@ export default function HomePage() {
         comments: p.comment_count ?? 0,
         type,
         userReaction: p.user_reaction || null,
+        is_boosted: p.is_boosted || false,
       });
 
       const posts = (postsRes?.data?.results ?? postsRes?.results ?? []).map((p: any) => mapItem(p, "post"));
       const prayers = (prayersRes?.data?.results ?? prayersRes?.results ?? []).map((p: any) => mapItem(p, "prayer"));
 
+      // Track pagination cursor from posts response
+      const nextUrl = postsRes?.data?.next ?? postsRes?.next ?? null;
+      setNextPageUrl(nextUrl);
+
       setFeedPosts([...posts, ...prayers].sort((a, b) =>
         new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime()
       ));
-    } catch (err) {
-      console.error("Failed to load feed:", err);
+    } catch {
       setFeedError("Failed to load feed. Please try again.");
     } finally {
       setLoading(false);
@@ -116,8 +149,17 @@ export default function HomePage() {
         const verse = verseRes?.data;
         if (verse?.verse_text) {
           setVerseData({ text: `"${verse.verse_text}"`, reference: `\u2014 ${verse.bible_reference}` });
+          // Check if onboarding should show (first visit today)
+          const today = new Date().toISOString().split("T")[0];
+          const lastSeen = localStorage.getItem("verse_onboarding_date");
+          if (lastSeen !== today) {
+            setShowVerseOnboarding(true);
+            localStorage.setItem("verse_onboarding_date", today);
+          }
         }
-      } catch {}
+      } catch { /* verse fetch failed */ } finally {
+        setVerseLoading(false);
+      }
 
       if (typeof window !== "undefined") {
         const dTab = localStorage.getItem("draft_tab");
@@ -143,23 +185,50 @@ export default function HomePage() {
   ];
 
   async function handleReact(postId: string, postType: string, emojiType: string) {
+    // Prevent rapid-fire clicks while a reaction is in-flight
+    if (reactingPosts.current.has(postId)) return;
+    reactingPosts.current.add(postId);
+
     const emoji = REACTIONS.find(r => r.type === emojiType)?.emoji || "\u2764\uFE0F";
     setAnimatingReaction({ postId, emoji });
     setTimeout(() => setAnimatingReaction(null), 700);
     setOpenReactionId(null);
 
+    // Optimistic update: apply immediately, revert on error
+    const currentPost = feedPosts.find(p => p.id === postId);
+    const countKey = postType === "post" ? "likes" : "prayers";
+    const isRemoving = currentPost?.userReaction === emojiType;
+    setFeedPosts(prev => prev.map(p => {
+      if (p.id !== postId) return p;
+      return {
+        ...p,
+        [countKey]: isRemoving ? Math.max(0, (p[countKey] || 0) - 1) : (p[countKey] || 0) + (p.userReaction ? 0 : 1),
+        userReaction: isRemoving ? null : emojiType,
+      };
+    }));
+
     try {
       const endpoint = postType === "post" ? `/social/posts/${postId}/react/` : `/social/prayers/${postId}/react/`;
       const res = await fetchAPI(endpoint, { method: "POST", body: JSON.stringify({ emoji_type: emojiType }) });
+      // Sync with server truth
       const wasRemoved = res?.message === "Reaction removed.";
+      const serverCount = res?.data?.reaction_count;
       setFeedPosts(prev => prev.map(p => {
         if (p.id !== postId) return p;
-        const countKey = postType === "post" ? "likes" : "prayers";
-        return { ...p, [countKey]: wasRemoved ? Math.max(0, (p[countKey] || 0) - 1) : (p[countKey] || 0) + 1, userReaction: wasRemoved ? null : emojiType };
+        return {
+          ...p,
+          [countKey]: serverCount !== undefined ? serverCount : p[countKey],
+          userReaction: wasRemoved ? null : emojiType,
+        };
       }));
     } catch (err: unknown) {
-      console.error("React failed:", err);
+      // Revert optimistic update on error
+      if (currentPost) {
+        setFeedPosts(prev => prev.map(p => p.id !== postId ? p : { ...p, [countKey]: currentPost[countKey], userReaction: currentPost.userReaction }));
+      }
       if ((err as Error)?.message?.includes("token")) alert("Session expired. Please log in again.");
+    } finally {
+      reactingPosts.current.delete(postId);
     }
   }
 
@@ -172,20 +241,28 @@ export default function HomePage() {
     } catch {
       await navigator.clipboard.writeText(fallbackUrl).catch(() => { prompt("Copy this link:", fallbackUrl); });
     }
-    setShareToast(true);
-    setTimeout(() => setShareToast(false), 2000);
+    showToast(t("feed.linkCopied"));
   }
 
   async function handleReport() {
-    if (!reportTarget || !reportReason.trim() || reportSubmitting) return;
+    if (!reportTarget || !reportCategory || reportSubmitting) return;
     setReportSubmitting(true);
     try {
-      await fetchAPI("/social/reports/", { method: "POST", body: JSON.stringify({ content_type: reportTarget.type, object_id: reportTarget.id, reason: reportReason }) });
-      alert("Report submitted. Thank you.");
+      await fetchAPI("/social/reports/", {
+        method: "POST",
+        body: JSON.stringify({
+          content_type_model: reportTarget.type,
+          object_id: reportTarget.id,
+          reason: reportCategory,
+          description: reportReason.trim(),
+        }),
+      });
       setReportTarget(null);
       setReportReason("");
-    } catch (err) {
-      console.error("Report failed:", err);
+      setReportCategory("inappropriate");
+      showToast("Report submitted. Thank you.");
+    } catch {
+      showToast("Failed to submit report. Please try again.");
     } finally {
       setReportSubmitting(false);
     }
@@ -197,14 +274,82 @@ export default function HomePage() {
     const newDate = d.toISOString().split("T")[0];
     if (newDate > today) return;
     setVerseDate(newDate);
+    setVerseLoading(true);
     try {
       const res = await fetchAPI(`/verse-of-day/${newDate}/`);
       const verse = res?.data;
-      if (verse?.verse_text) setVerseData({ text: `"${verse.verse_text}"`, reference: `\u2014 ${verse.bible_reference}` });
-    } catch (err) {
-      console.error("Failed to load verse:", err);
+      if (verse?.verse_text) {
+        setVerseData({ text: `"${verse.verse_text}"`, reference: `\u2014 ${verse.bible_reference}` });
+      } else {
+        setVerseData(null);
+      }
+    } catch {
+      setVerseData(null);
+    } finally {
+      setVerseLoading(false);
     }
   }
+
+  // Infinite scroll: load next page
+  const loadMorePosts = useCallback(async () => {
+    if (!nextPageUrl || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      // Extract cursor/page param from nextPageUrl
+      const urlObj = new URL(nextPageUrl);
+      const cursor = urlObj.searchParams.get("cursor") || urlObj.searchParams.get("page") || "";
+      const separator = nextPageUrl.includes("?") ? "" : "";
+      // Build the endpoint with the cursor param
+      const params = urlObj.search;
+      const endpoint = `/social/posts/${params}`;
+      const res = await fetchAPI(endpoint);
+
+      const mapItem = (p: any, type: "post" | "prayer") => ({
+        id: p.id,
+        author: p.author?.full_name || "Anonymous",
+        authorId: p.author?.id,
+        authorPhoto: p.author?.profile_photo,
+        time: new Date(p.created_at).toLocaleDateString(),
+        rawDate: p.created_at,
+        title: p.title,
+        content: type === "post" ? p.text_content : p.description,
+        image: p.media?.[0]?.file,
+        likes: p.reaction_count ?? 0,
+        prayers: type === "prayer" ? (p.reaction_count ?? 0) : undefined,
+        comments: p.comment_count ?? 0,
+        type,
+        userReaction: p.user_reaction || null,
+        is_boosted: p.is_boosted || false,
+      });
+
+      const newPosts = (res?.data?.results ?? res?.results ?? []).map((p: any) => mapItem(p, "post"));
+      const newNextUrl = res?.data?.next ?? res?.next ?? null;
+      setNextPageUrl(newNextUrl);
+      setFeedPosts((prev) => {
+        const existingIds = new Set(prev.map((p) => p.id));
+        const unique = newPosts.filter((p: any) => !existingIds.has(p.id));
+        return [...prev, ...unique];
+      });
+    } catch { /* failed to load more */ } finally {
+      setLoadingMore(false);
+    }
+  }, [nextPageUrl, loadingMore]);
+
+  // IntersectionObserver for infinite scroll sentinel
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const scrollObserver = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && nextPageUrl && !loadingMore) {
+          loadMorePosts();
+        }
+      },
+      { threshold: 0.1 }
+    );
+    scrollObserver.observe(sentinel);
+    return () => scrollObserver.disconnect();
+  }, [nextPageUrl, loadingMore, loadMorePosts]);
 
   const trackView = useCallback((postId: string, postType: string) => {
     if (viewedPosts.current.has(postId)) return;
@@ -236,9 +381,7 @@ export default function HomePage() {
     try {
       await fetchAPI(type === "post" ? `/social/posts/${id}/` : `/social/prayers/${id}/`, { method: "DELETE" });
       setFeedPosts(prev => prev.filter(p => p.id !== id));
-    } catch (err) {
-      console.error("Failed to delete:", err);
-    }
+    } catch { /* delete failed */ }
   }
 
   const ShimmerPost = () => (
@@ -269,8 +412,49 @@ export default function HomePage() {
                   <button onClick={() => navigateVerse(1)} disabled={verseDate >= today} className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/30 transition-colors disabled:opacity-30"><span className="material-symbols-outlined text-sm">chevron_right</span></button>
                 </div>
               </div>
-              <blockquote className="text-4xl md:text-5xl font-headline leading-tight mb-4 max-w-3xl">{verseData.text}</blockquote>
-              <cite className="text-base text-white/80 font-body">{verseData.reference}</cite>
+              {verseLoading ? (
+                <>
+                  <div className="h-12 w-3/4 bg-white/10 rounded-lg mb-4 animate-pulse" />
+                  <div className="h-12 w-1/2 bg-white/10 rounded-lg mb-4 animate-pulse" />
+                  <div className="h-5 w-40 bg-white/10 rounded-lg animate-pulse" />
+                </>
+              ) : verseData ? (
+                <>
+                  <blockquote className="text-4xl md:text-5xl font-headline leading-tight mb-4 max-w-3xl">{verseData.text}</blockquote>
+                  <cite className="text-base text-white/80 font-body">{verseData.reference}</cite>
+                  {/* Share + Replay buttons */}
+                  <div className="flex items-center gap-3 mt-6">
+                    <div className="relative" ref={verseShareRef}>
+                      <button
+                        onClick={() => setShowVerseShare(!showVerseShare)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/15 backdrop-blur-sm text-white text-sm font-medium hover:bg-white/25 transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-lg">share</span>
+                        Share
+                      </button>
+                      {showVerseShare && (
+                        <div className="absolute bottom-full left-0 mb-2">
+                          <VerseShareDropdown
+                            verseText={verseData.text}
+                            verseReference={verseData.reference}
+                            onClose={() => setShowVerseShare(false)}
+                            onToast={showToast}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setShowVerseOnboarding(true)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/15 backdrop-blur-sm text-white text-sm font-medium hover:bg-white/25 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-lg">replay</span>
+                      Replay
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-xl text-white/60 font-headline italic">No verse available for this day.</p>
+              )}
             </div>
           </div>
 
@@ -302,6 +486,17 @@ export default function HomePage() {
             ) : (
               <div className="text-center py-20 bg-surface-container-lowest rounded-xl border border-dashed text-on-surface-variant">{activeTab === "post" ? t("feed.noPostsYet") : t("feed.noPrayersYet")}</div>
             )}
+            {/* Infinite scroll sentinel */}
+            {activeTab === "post" && (
+              <>
+                <div ref={sentinelRef} className="h-4" />
+                {loadingMore && (
+                  <div className="flex justify-center py-6">
+                    <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-primary"></div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </section>
 
@@ -328,6 +523,9 @@ export default function HomePage() {
               )}
             </div>
           </div>
+
+          {/* Recommended People */}
+          {isLoggedIn && <RecommendedPeople />}
 
           {/* Prayer Wall */}
           <div className="bg-surface-container-lowest rounded-xl p-6 editorial-shadow">
@@ -371,19 +569,54 @@ export default function HomePage() {
 
       {showPostingModal && <PostingModal activeTab={activeTab} onClose={() => setShowPostingModal(false)} onPostCreated={loadFeed} />}
 
-      {shareToast && <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-on-surface text-surface px-6 py-3 rounded-full shadow-xl z-[200] text-sm font-medium toast-enter">{t("feed.linkCopied")}</div>}
-
-      {reportTarget && (
-        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4 modal-overlay" onClick={() => setReportTarget(null)}>
-          <div className="bg-surface-container-lowest w-full max-w-sm rounded-2xl p-8 editorial-shadow modal-content" onClick={(e) => e.stopPropagation()}>
+      {/* Report Modal — via portal to escape overflow */}
+      {reportTarget && typeof window !== "undefined" && createPortal(
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4" onClick={() => setReportTarget(null)}>
+          <div className="bg-surface-container-lowest w-full max-w-sm rounded-2xl p-8 shadow-2xl border border-outline-variant/10" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-headline text-xl mb-4">{t("feed.reportContent")}</h3>
-            <textarea placeholder={t("feed.reportReason")} value={reportReason} onChange={(e) => setReportReason(e.target.value)} rows={3} className="w-full bg-surface-container-high border border-outline-variant/20 rounded-xl px-4 py-3 focus:outline-none focus:ring-1 focus:ring-primary/40 text-sm mb-4 resize-none" />
+            <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider block mb-2">Reason</label>
+            <div className="space-y-2 mb-4">
+              {[
+                { value: "inappropriate", label: "Inappropriate" },
+                { value: "spam", label: "Spam" },
+                { value: "false_teaching", label: "False Teaching" },
+                { value: "other", label: "Other" },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setReportCategory(opt.value)}
+                  className={`w-full text-left px-4 py-2.5 rounded-xl text-sm transition-all ${reportCategory === opt.value ? "bg-red-50 text-red-700 font-semibold ring-1 ring-red-200" : "bg-surface-container-high text-on-surface hover:bg-surface-container-low"}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <textarea placeholder="Additional details (optional)..." value={reportReason} onChange={(e) => setReportReason(e.target.value)} rows={2} className="w-full bg-surface-container-high border border-outline-variant/20 rounded-xl px-4 py-3 focus:outline-none focus:ring-1 focus:ring-primary/40 text-sm text-on-surface mb-4 resize-none" />
             <div className="flex gap-3">
-              <button onClick={() => setReportTarget(null)} className="flex-1 py-3 rounded-xl bg-surface-container-low text-on-surface-variant font-semibold">Cancel</button>
-              <button onClick={handleReport} disabled={reportSubmitting || !reportReason.trim()} className="flex-1 py-3 rounded-xl bg-red-600 text-white font-semibold disabled:opacity-50">{reportSubmitting ? "Submitting..." : "Report"}</button>
+              <button onClick={() => { setReportTarget(null); setReportReason(""); setReportCategory("inappropriate"); }} className="flex-1 py-3 rounded-xl bg-surface-container-low text-on-surface-variant font-semibold">Cancel</button>
+              <button onClick={handleReport} disabled={reportSubmitting} className="flex-1 py-3 rounded-xl bg-red-600 text-white font-semibold disabled:opacity-50">{reportSubmitting ? "Submitting..." : "Report"}</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Verse of the Day Onboarding */}
+      {showVerseOnboarding && verseData && (
+        <VerseOnboarding
+          verseText={verseData.text}
+          verseReference={verseData.reference}
+          onDismiss={() => setShowVerseOnboarding(false)}
+          onToast={showToast}
+        />
+      )}
+
+      {/* Unified Toast */}
+      {toast && createPortal(
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-on-surface text-surface px-6 py-3 rounded-full shadow-xl z-[20000] text-sm font-medium animate-in fade-in slide-in-from-bottom-2 duration-200">
+          {toast}
+        </div>,
+        document.body
       )}
     </MainLayout>
   );

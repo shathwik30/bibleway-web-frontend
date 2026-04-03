@@ -23,9 +23,7 @@ export default function ProductDetailPage() {
       try {
         const res = await fetchAPI(`/shop/products/${productId}/`);
         setProduct(res.data || res);
-      } catch (err) {
-        console.error("Failed to load product:", err);
-      } finally {
+      } catch { /* failed to load */ } finally {
         setLoading(false);
       }
     }
@@ -58,8 +56,7 @@ export default function ProductDetailPage() {
       } else {
         alert("Download not available.");
       }
-    } catch (err) {
-      console.error("Download failed:", err);
+    } catch {
       alert("Download failed.");
     } finally {
       setDownloading(false);

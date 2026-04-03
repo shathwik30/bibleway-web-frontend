@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import MainLayout from "../components/MainLayout";
 import { fetchAPI } from "../lib/api";
 import { useTranslation } from "../lib/i18n";
+import { useTheme } from "../lib/ThemeContext";
 
 const LANGUAGES = [
   { code: "en", name: "English" },
@@ -20,6 +21,7 @@ const LANGUAGES = [
 export default function SettingsPage() {
   const router = useRouter();
   const { t, setLocale, locale } = useTranslation();
+  const { theme, setTheme } = useTheme();
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [language, setLanguage] = useState("en");
@@ -36,6 +38,7 @@ export default function SettingsPage() {
   const [loadingBookmarks, setLoadingBookmarks] = useState(false);
   const [notes, setNotes] = useState<any[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") setPushEnabled(!!localStorage.getItem("push_token"));
@@ -86,7 +89,7 @@ export default function SettingsPage() {
 
   async function savePrivacy() {
     setSavingPrivacy(true);
-    try { await fetchAPI("/accounts/privacy/", { method: "PATCH", body: JSON.stringify(privacy) }); } catch {} finally { setSavingPrivacy(false); }
+    try { await fetchAPI("/accounts/privacy/", { method: "PUT", body: JSON.stringify(privacy) }); } catch {} finally { setSavingPrivacy(false); }
   }
 
   async function handleUnblock(userId: string) {
@@ -97,9 +100,9 @@ export default function SettingsPage() {
     try { await fetchAPI(`/accounts/follow-requests/${id}/`, { method: action === "accept" ? "POST" : "DELETE" }); setFollowRequests((p) => p.filter((r) => r.id !== id)); } catch {}
   }
 
-  async function handleDownload(purchaseId: string) {
+  async function handleDownload(productId: string) {
     try {
-      const r = await fetchAPI(`/shop/downloads/${purchaseId}/`);
+      const r = await fetchAPI(`/shop/downloads/${productId}/`);
       const url = r.data?.url || r.url || r.data?.download_url || r.download_url;
       if (url) window.open(url, "_blank");
       else alert("Download not available.");
@@ -158,6 +161,28 @@ export default function SettingsPage() {
             <span className="material-symbols-outlined text-on-surface-variant/40 text-sm">chevron_right</span>
           </Link>
 
+          {/* Theme */}
+          <div>
+            <SettingsRow icon={theme === "dark" ? "dark_mode" : theme === "light" ? "light_mode" : "brightness_auto"} label="Theme" panel="theme" />
+            <Panel panel="theme">
+              <div className="space-y-2">
+                {([
+                  { value: "light" as const, label: "Light", icon: "light_mode" },
+                  { value: "dark" as const, label: "Dark", icon: "dark_mode" },
+                  { value: "system" as const, label: "System", icon: "brightness_auto" },
+                ]).map((opt) => (
+                  <button key={opt.value} onClick={() => setTheme(opt.value)} className={`w-full text-left px-4 py-3 rounded-xl text-sm transition-all flex items-center justify-between ${theme === opt.value ? "bg-primary/10 text-primary font-semibold" : "hover:bg-surface-container-high text-on-surface"}`}>
+                    <div className="flex items-center gap-3">
+                      <span className="material-symbols-outlined text-sm">{opt.icon}</span>
+                      {opt.label}
+                    </div>
+                    {theme === opt.value && <span className="material-symbols-outlined text-sm">check</span>}
+                  </button>
+                ))}
+              </div>
+            </Panel>
+          </div>
+
           {/* Language */}
           <div>
             <SettingsRow icon="language" label={t("settings.language")} panel="language" />
@@ -181,11 +206,11 @@ export default function SettingsPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div><p className="font-medium text-sm text-on-surface">Private Profile</p><p className="text-xs text-on-surface-variant">Only approved members can see your posts</p></div>
-                  <div className="relative inline-flex items-center cursor-pointer"><input className="sr-only peer" type="checkbox" checked={privacy.account_visibility === "private"} onChange={(e) => setPrivacy((p) => ({ ...p, account_visibility: e.target.checked ? "private" : "public" }))} /><div className="w-11 h-6 bg-surface-container-high rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div></div>
+                  <div className="relative inline-flex items-center cursor-pointer"><input className="sr-only peer" type="checkbox" checked={privacy.account_visibility === "private"} onChange={(e) => setPrivacy((p) => ({ ...p, account_visibility: e.target.checked ? "private" : "public" }))} /><div className="w-11 h-6 bg-surface-container-high rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-outline-variant after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div></div>
                 </div>
                 <div className="flex items-center justify-between">
                   <div><p className="font-medium text-sm text-on-surface">Push Notifications</p><p className="text-xs text-on-surface-variant">Receive alerts for activity</p></div>
-                  <div className="relative inline-flex items-center cursor-pointer"><input className="sr-only peer" type="checkbox" checked={pushEnabled} onChange={(e) => handlePushToggle(e.target.checked)} /><div className="w-11 h-6 bg-surface-container-high rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div></div>
+                  <div className="relative inline-flex items-center cursor-pointer"><input className="sr-only peer" type="checkbox" checked={pushEnabled} onChange={(e) => handlePushToggle(e.target.checked)} /><div className="w-11 h-6 bg-surface-container-high rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-outline-variant after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div></div>
                 </div>
                 <button onClick={savePrivacy} disabled={savingPrivacy} className="bg-primary text-on-primary px-6 py-2 rounded-xl text-sm font-semibold disabled:opacity-50 press-effect">{savingPrivacy ? "Saving..." : "Save"}</button>
               </div>
@@ -249,7 +274,7 @@ export default function SettingsPage() {
                           <p className="text-xs text-on-surface-variant">{new Date(p.created_at || p.purchased_at).toLocaleDateString()}</p>
                         </div>
                       </div>
-                      <button onClick={() => handleDownload(p.id)} className="text-xs text-primary font-bold hover:underline flex items-center gap-1 press-effect">
+                      <button onClick={() => handleDownload(product.id)} className="text-xs text-primary font-bold hover:underline flex items-center gap-1 press-effect">
                         <span className="material-symbols-outlined text-sm">download</span> Download
                       </button>
                     </div>
@@ -303,12 +328,27 @@ export default function SettingsPage() {
             <span className="material-symbols-outlined text-red-500">logout</span>
             <span className="font-medium text-red-600">{t("settings.logout")}</span>
           </button>
-          <button onClick={() => { if (confirm("Are you sure you want to delete your account? This cannot be undone.")) alert("Contact support to delete your account."); }} className="w-full flex items-center gap-4 px-6 py-4 hover:bg-red-50 transition-all text-left press-effect">
+          <button onClick={() => setShowDeleteModal(true)} className="w-full flex items-center gap-4 px-6 py-4 hover:bg-red-50 transition-all text-left press-effect">
             <span className="material-symbols-outlined text-red-500">delete_forever</span>
             <span className="font-medium text-red-600">{t("settings.deleteAccount")}</span>
           </button>
         </div>
       </div>
+
+      {/* Delete Account Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4" onClick={() => setShowDeleteModal(false)}>
+          <div className="bg-surface-container-lowest w-full max-w-sm rounded-2xl p-8 editorial-shadow" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="material-symbols-outlined text-2xl text-red-500">delete_forever</span>
+              <h3 className="font-headline text-xl">Delete Account</h3>
+            </div>
+            <p className="text-on-surface-variant text-sm mb-2">Are you sure you want to delete your account? This cannot be undone.</p>
+            <p className="text-on-surface-variant text-sm mb-6">Please contact <span className="text-primary font-semibold">support@bibleway.app</span> to proceed with account deletion.</p>
+            <button onClick={() => setShowDeleteModal(false)} className="w-full py-3 rounded-xl bg-surface-container-low text-on-surface-variant font-semibold">Close</button>
+          </div>
+        </div>
+      )}
     </MainLayout>
   );
 }

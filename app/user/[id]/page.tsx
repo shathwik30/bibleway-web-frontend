@@ -18,10 +18,13 @@ export default function PublicProfilePage() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [blockConfirm, setBlockConfirm] = useState<"block" | "unblock" | null>(null);
+  const [actionToast, setActionToast] = useState<string | null>(null);
   const [showFollowersModal, setShowFollowersModal] = useState<"followers" | "following" | null>(null);
   const [followList, setFollowList] = useState<any[]>([]);
   const [followListLoading, setFollowListLoading] = useState(false);
-  const currentUserId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  useEffect(() => { setCurrentUserId(localStorage.getItem("user_id")); }, []);
   const { startConversation } = useChat();
 
   useEffect(() => {
@@ -39,9 +42,7 @@ export default function PublicProfilePage() {
         ]);
         setPosts(postsRes?.data?.results || postsRes?.results || []);
         setPrayers(prayersRes?.data?.results || prayersRes?.results || []);
-      } catch (err) {
-        console.error("Failed to load user profile:", err);
-      } finally {
+      } catch { /* failed to load profile */ } finally {
         setLoading(false);
       }
     }
@@ -61,31 +62,28 @@ export default function PublicProfilePage() {
         setIsFollowing(true);
         setProfile((p: any) => ({ ...p, follower_count: (p.follower_count || 0) + 1 }));
       }
-    } catch (err) {
-      console.error("Follow action failed:", err);
-    } finally {
+    } catch { /* follow action failed */ } finally {
       setFollowLoading(false);
     }
   }
 
   async function handleBlock() {
-    if (!confirm("Are you sure you want to block this user?")) return;
     try {
       await fetchAPI(`/accounts/users/${userId}/block/`, { method: "POST" });
-      alert("User blocked.");
-    } catch (err) {
-      console.error("Block failed:", err);
-    }
+      setActionToast("User blocked.");
+      setTimeout(() => setActionToast(null), 2500);
+    } catch { /* block failed */ }
+    setBlockConfirm(null);
     setShowMenu(false);
   }
 
   async function handleUnblock() {
     try {
       await fetchAPI(`/accounts/users/${userId}/block/`, { method: "DELETE" });
-      alert("User unblocked.");
-    } catch (err) {
-      console.error("Unblock failed:", err);
-    }
+      setActionToast("User unblocked.");
+      setTimeout(() => setActionToast(null), 2500);
+    } catch { /* unblock failed */ }
+    setBlockConfirm(null);
     setShowMenu(false);
   }
 
@@ -95,9 +93,7 @@ export default function PublicProfilePage() {
     try {
       const res = await fetchAPI(`/accounts/users/${userId}/${type}/`);
       setFollowList(res?.data?.results || res?.results || res?.data || []);
-    } catch (err) {
-      console.error(`Failed to load ${type}:`, err);
-    } finally {
+    } catch { /* failed to load follow list */ } finally {
       setFollowListLoading(false);
     }
   }
@@ -185,11 +181,11 @@ export default function PublicProfilePage() {
                   </button>
                   {showMenu && (
                     <div className="absolute top-full left-0 right-0 mt-2 bg-surface-container-lowest rounded-xl shadow-xl border border-outline-variant/20 z-50 overflow-hidden">
-                      <button onClick={handleBlock} className="w-full text-left px-4 py-3 text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2">
+                      <button onClick={() => { setBlockConfirm("block"); setShowMenu(false); }} className="w-full text-left px-4 py-3 text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2">
                         <span className="material-symbols-outlined text-lg">block</span>
                         Block User
                       </button>
-                      <button onClick={handleUnblock} className="w-full text-left px-4 py-3 text-on-surface-variant hover:bg-surface-container-low transition-colors flex items-center gap-2">
+                      <button onClick={() => { setBlockConfirm("unblock"); setShowMenu(false); }} className="w-full text-left px-4 py-3 text-on-surface-variant hover:bg-surface-container-low transition-colors flex items-center gap-2">
                         <span className="material-symbols-outlined text-lg">person_add</span>
                         Unblock User
                       </button>
@@ -262,6 +258,43 @@ export default function PublicProfilePage() {
           )}
         </section>
       </div>
+
+      {/* Block/Unblock Confirmation Modal */}
+      {blockConfirm && (
+        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4" onClick={() => setBlockConfirm(null)}>
+          <div className="bg-surface-container-lowest w-full max-w-sm rounded-2xl p-8 editorial-shadow" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <span className={`material-symbols-outlined text-2xl ${blockConfirm === "block" ? "text-red-500" : "text-primary"}`}>
+                {blockConfirm === "block" ? "block" : "person_add"}
+              </span>
+              <h3 className="font-headline text-xl">
+                {blockConfirm === "block" ? "Block User" : "Unblock User"}
+              </h3>
+            </div>
+            <p className="text-on-surface-variant text-sm mb-6">
+              {blockConfirm === "block"
+                ? `Are you sure you want to block ${profile.full_name}? They won't be able to see your posts or follow you.`
+                : `Unblock ${profile.full_name}? They will be able to see your profile and follow you again.`}
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setBlockConfirm(null)} className="flex-1 py-3 rounded-xl bg-surface-container-low text-on-surface-variant font-semibold">Cancel</button>
+              <button
+                onClick={blockConfirm === "block" ? handleBlock : handleUnblock}
+                className={`flex-1 py-3 rounded-xl font-semibold text-white ${blockConfirm === "block" ? "bg-red-600" : "bg-primary"}`}
+              >
+                {blockConfirm === "block" ? "Block" : "Unblock"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Action Toast */}
+      {actionToast && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-on-surface text-surface px-6 py-3 rounded-full shadow-xl z-[200] text-sm font-medium">
+          {actionToast}
+        </div>
+      )}
 
       {/* Followers/Following Modal */}
       {showFollowersModal && (

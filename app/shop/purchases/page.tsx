@@ -15,26 +15,23 @@ export default function MyPurchasesPage() {
       try {
         const res = await fetchAPI("/shop/purchases/list/");
         setPurchases(res?.data?.results || res?.results || res?.data || []);
-      } catch (err) {
-        console.error("Failed to load purchases:", err);
-      } finally {
+      } catch { /* failed to load */ } finally {
         setLoading(false);
       }
     }
     load();
   }, []);
 
-  async function handleDownload(purchaseId: string) {
+  async function handleDownload(productId: string) {
     try {
-      const res = await fetchAPI(`/shop/downloads/${purchaseId}/`);
+      const res = await fetchAPI(`/shop/downloads/${productId}/`);
       const url = res.data?.url || res.url || res.data?.download_url || res.download_url;
       if (url) {
         window.open(url, "_blank");
       } else {
         alert("Download not available.");
       }
-    } catch (err) {
-      console.error("Download failed:", err);
+    } catch {
       alert("Download failed.");
     }
   }
@@ -82,7 +79,7 @@ export default function MyPurchasesPage() {
                       Purchased {new Date(purchase.created_at || purchase.purchased_at).toLocaleDateString()}
                     </p>
                     <button
-                      onClick={() => handleDownload(purchase.id)}
+                      onClick={() => handleDownload(product.id)}
                       className="w-full py-3 rounded-xl bg-primary text-on-primary font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-all"
                     >
                       <span className="material-symbols-outlined text-lg">download</span>

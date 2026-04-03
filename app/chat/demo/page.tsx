@@ -14,7 +14,6 @@ interface DemoMessage {
 }
 
 const BOT_NAME = "Grace (BibleWay Assistant)";
-const BOT_PHOTO = null;
 
 const BOT_REPLIES: Record<string, string[]> = {
   hello: ["Hello! God bless you! How can I help you today?", "Hi there! Welcome to BibleWay. How are you doing?", "Hey! Great to see you here. What's on your mind?"],
@@ -102,8 +101,8 @@ export default function DemoChatPage() {
   }
 
   return (
-    <MainLayout>
-      <div className="max-w-4xl mx-auto flex flex-col h-[calc(100vh-80px)]" data-page>
+    <MainLayout hideFooter>
+      <div className="flex flex-col h-[calc(100vh-4rem)]" data-page>
         {/* Header */}
         <div className="flex items-center gap-4 px-4 py-3 border-b border-outline-variant/10 bg-surface-container-lowest/80 backdrop-blur-sm sticky top-16 z-10">
           <Link href="/chat" className="p-2 rounded-full hover:bg-surface-container-high transition-all press-effect">
@@ -119,7 +118,7 @@ export default function DemoChatPage() {
               {isTyping ? "Typing..." : "Online"}
             </p>
           </div>
-          <div className="px-3 py-1 rounded-full bg-tertiary-fixed/20 text-on-tertiary-fixed-variant text-[10px] font-bold uppercase tracking-widest">
+          <div className="px-3 py-1 rounded-full bg-primary/15 text-primary text-[10px] font-bold uppercase tracking-widest">
             Demo
           </div>
         </div>
@@ -213,8 +212,8 @@ export default function DemoChatPage() {
                 className="w-full bg-surface-container-high rounded-2xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:ring-1 focus:ring-primary/30 resize-none max-h-32"
               />
             </div>
-            <button onClick={handleSend} disabled={!text.trim()} className="p-2.5 rounded-full bg-primary text-on-primary hover:opacity-90 transition-all disabled:opacity-30 press-effect">
-              <span className="material-symbols-outlined">send</span>
+            <button onClick={handleSend} disabled={!text.trim()} className="w-10 h-10 shrink-0 flex items-center justify-center rounded-full bg-primary text-on-primary hover:opacity-90 transition-all disabled:opacity-30 press-effect">
+              <span className="material-symbols-outlined text-[20px]">send</span>
             </button>
           </div>
         </div>

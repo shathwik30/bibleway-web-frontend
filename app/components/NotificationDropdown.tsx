@@ -42,9 +42,7 @@ export default function NotificationDropdown() {
       const res = await fetchAPI("/notifications/");
       const data = res?.results ?? res?.data?.results ?? [];
       setNotifications(data);
-    } catch (e) {
-      console.error("Failed to load notifications:", e);
-    }
+    } catch { /* failed to load notifications */ }
     setLoading(false);
   }
 
@@ -63,9 +61,7 @@ export default function NotificationDropdown() {
       });
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
       setUnreadCount(prev => Math.max(0, prev - 1));
-    } catch (e) {
-      console.error("Failed to mark read:", e);
-    }
+    } catch { /* failed to mark read */ }
   }
 
   async function deleteNotification(id: string) {
@@ -78,9 +74,7 @@ export default function NotificationDropdown() {
         }
         return prev.filter(n => n.id !== id);
       });
-    } catch (e) {
-      console.error("Failed to delete notification:", e);
-    }
+    } catch { /* failed to delete notification */ }
   }
 
   async function markAllAsRead() {
@@ -91,21 +85,19 @@ export default function NotificationDropdown() {
       });
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
       setUnreadCount(0);
-    } catch (e) {
-      console.error("Failed to mark all read:", e);
-    }
+    } catch { /* failed to mark all read */ }
   }
 
   return (
     <div className="relative" ref={dropdownRef}>
-      <button 
+      <button
         onClick={handleToggle}
-        className="p-2 text-on-surface-variant hover:text-primary transition-colors relative cursor-pointer"
+        className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-all duration-200 relative cursor-pointer"
         aria-label="Notifications"
       >
-        <span className="material-symbols-outlined">notifications</span>
+        <span className="material-symbols-outlined text-[22px]">notifications</span>
         {unreadCount > 0 && (
-          <span className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full ring-2 ring-stone-50"></span>
+          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full ring-2 ring-surface"></span>
         )}
       </button>
 

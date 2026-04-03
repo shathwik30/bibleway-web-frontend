@@ -23,6 +23,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     const token = localStorage.getItem("access_token");
     if (!token) return;
 
+    // Don't attempt WebSocket if we've failed too many times (backend likely has no WS support)
+    if (reconnectAttempts.current >= 3) return;
+
     const baseUrl = (process.env.NEXT_PUBLIC_WS_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000")
       .replace(/^http/, "ws")
       .replace(/\/api\/v1$/, "");
@@ -36,7 +39,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         setConnected(true);
         reconnectAttempts.current = 0;
         handlersRef.current.onConnect?.();
-        // Heartbeat every 30s to keep connection alive
         heartbeatInterval = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ action: "pong", request_id: crypto.randomUUID() }));
@@ -48,7 +50,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         try {
           const data = JSON.parse(event.data);
           handlersRef.current.onMessage?.(data);
-        } catch {}
+        } catch { /* malformed message */ }
       };
 
       ws.onclose = () => {
@@ -56,7 +58,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         setConnected(false);
         wsRef.current = null;
         handlersRef.current.onDisconnect?.();
-        // Exponential backoff reconnection
+        // Only reconnect if there's still a valid token
+        const currentToken = localStorage.getItem("access_token");
+        if (!currentToken) return;
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
         reconnectAttempts.current++;
         reconnectTimeout.current = setTimeout(connect, delay);
@@ -64,7 +68,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
       ws.onerror = () => ws.close();
       wsRef.current = ws;
-    } catch {}
+    } catch { /* connection failed */ }
   }, []);
 
   useEffect(() => {

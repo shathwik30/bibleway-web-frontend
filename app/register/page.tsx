@@ -34,14 +34,7 @@ export default function RegisterPage() {
   };
 
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const val = e.target.value;
-    const map: Record<string, string> = {
-      English: "en",
-      Hindi: "hi",
-      "Español": "es",
-      "Français": "fr",
-    };
-    setFormData({ ...formData, preferred_language: map[val] || "en" });
+    setFormData({ ...formData, preferred_language: e.target.value });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -210,14 +203,18 @@ export default function RegisterPage() {
             <label className="text-[10px] uppercase tracking-widest font-bold text-primary mb-2 block">
               Preferred App Language
             </label>
-            <select 
+            <select
+              value={formData.preferred_language}
               onChange={handleLanguageChange}
               className="w-full bg-surface-container-high border-none rounded-xl px-4 py-4 focus:ring-1 focus:ring-tertiary-fixed-dim focus:bg-surface-container-lowest transition-all appearance-none cursor-pointer font-medium"
             >
-              <option>English</option>
-              <option>Hindi</option>
-              <option>Español</option>
-              <option>Français</option>
+              <option value="en">English</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="hi">Hindi (हिन्दी)</option>
+              <option value="pt">Português</option>
+              <option value="ar">العربية (Arabic)</option>
+              <option value="sw">Kiswahili</option>
             </select>
           </div>
 

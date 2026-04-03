@@ -10,7 +10,8 @@ export default function ChatPage() {
   const { conversations, loadConversations, connected, markRead } = useChat();
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState("");
-  const currentUserId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  useEffect(() => { setCurrentUserId(localStorage.getItem("user_id")); }, []);
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
 
@@ -22,7 +23,7 @@ export default function ChatPage() {
   });
 
   return (
-    <MainLayout>
+    <MainLayout hideFooter>
       <div className="max-w-4xl mx-auto px-4 py-8" data-page>
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -55,7 +56,7 @@ export default function ChatPage() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-on-surface group-hover:text-primary transition-colors">Grace (BibleWay Assistant)</h3>
-                <span className="px-2 py-0.5 rounded-full bg-tertiary-fixed/20 text-on-tertiary-fixed-variant text-[9px] font-bold uppercase tracking-widest">Demo</span>
+                <span className="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[9px] font-bold uppercase tracking-widest">Demo</span>
               </div>
               <p className="text-sm text-on-surface-variant truncate mt-0.5">Try the chat feature! Tap to start chatting.</p>
             </div>

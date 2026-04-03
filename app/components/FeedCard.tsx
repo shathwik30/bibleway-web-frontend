@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { fetchAPI } from "../lib/api";
+import StickerPicker, { STICKERS } from "./StickerPicker";
 
 interface FeedPost {
   id: string;
@@ -19,6 +20,7 @@ interface FeedPost {
   comments: number;
   type: "post" | "prayer";
   userReaction: string | null;
+  is_boosted?: boolean;
 }
 
 const REACTIONS = [
@@ -58,6 +60,21 @@ export default function FeedCard({
   const [repliesData, setRepliesData] = useState<Record<string, any[]>>({});
   const [repliesLoading, setRepliesLoading] = useState<string | null>(null);
   const [openMenu, setOpenMenu] = useState(false);
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!openMenu) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        e.preventDefault();
+        e.stopPropagation();
+        setOpenMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside, true);
+    return () => document.removeEventListener("mousedown", handleClickOutside, true);
+  }, [openMenu]);
 
   async function loadComments() {
     setCommentsLoading(true);
@@ -67,9 +84,7 @@ export default function FeedCard({
         : `/social/prayers/${post.id}/comments/`;
       const res = await fetchAPI(endpoint);
       setComments(res?.data?.results ?? res?.results ?? []);
-    } catch (err) {
-      console.error("Failed to load comments:", err);
-    } finally {
+    } catch { /* failed to load comments */ } finally {
       setCommentsLoading(false);
     }
   }
@@ -91,9 +106,7 @@ export default function FeedCard({
       setNewComment("");
       setCommentCount((c) => c + 1);
       await loadComments();
-    } catch (err) {
-      console.error("Failed to post comment:", err);
-    } finally {
+    } catch { /* failed to post comment */ } finally {
       setPostingComment(false);
     }
   }
@@ -104,9 +117,7 @@ export default function FeedCard({
       await fetchAPI(`/social/comments/${commentId}/`, { method: "DELETE" });
       setComments((prev) => prev.filter((c) => c.id !== commentId));
       setCommentCount((c) => Math.max(0, c - 1));
-    } catch (err) {
-      console.error("Failed to delete comment:", err);
-    }
+    } catch { /* failed to delete comment */ }
   }
 
   async function loadReplies(commentId: string) {
@@ -114,9 +125,7 @@ export default function FeedCard({
     try {
       const res = await fetchAPI(`/social/comments/${commentId}/replies/`);
       setRepliesData((prev) => ({ ...prev, [commentId]: res?.data?.results ?? res?.results ?? [] }));
-    } catch (err) {
-      console.error("Failed to load replies:", err);
-    } finally {
+    } catch { /* failed to load replies */ } finally {
       setRepliesLoading(null);
     }
   }
@@ -129,11 +138,47 @@ export default function FeedCard({
       setReplyText("");
       setReplyingTo(null);
       await loadReplies(commentId);
-    } catch (err) {
-      console.error("Failed to post reply:", err);
-    } finally {
+    } catch { /* failed to post reply */ } finally {
       setPostingReply(false);
     }
+  }
+
+  function handleStickerSelect(stickerId: string) {
+    setShowStickerPicker(false);
+    setNewComment(`[sticker:${stickerId}]`);
+    // Auto-submit the sticker as a comment
+    (async () => {
+      setPostingComment(true);
+      try {
+        const endpoint = post.type === "post"
+          ? `/social/posts/${post.id}/comments/`
+          : `/social/prayers/${post.id}/comments/`;
+        await fetchAPI(endpoint, { method: "POST", body: JSON.stringify({ text: `[sticker:${stickerId}]` }) });
+        setNewComment("");
+        setCommentCount((c) => c + 1);
+        await loadComments();
+      } catch { /* failed to post sticker */ } finally {
+        setPostingComment(false);
+      }
+    })();
+  }
+
+  function renderCommentText(text: string) {
+    const stickerMatch = text.match(/^\[sticker:(\w+)\]$/);
+    if (stickerMatch) {
+      const stickerId = stickerMatch[1];
+      // GIF sticker (gif_1 through gif_87)
+      const gifMatch = stickerId.match(/^gif_(\d+)$/);
+      if (gifMatch) {
+        return <img src={`/stickers/sticker_${gifMatch[1]}.gif`} alt="Sticker" className="w-16 h-16 object-contain" />;
+      }
+      // Emoji sticker fallback
+      const sticker = STICKERS.find((s) => s.id === stickerId);
+      if (sticker) {
+        return <span className="text-4xl leading-none">{sticker.emoji}</span>;
+      }
+    }
+    return <>{text}</>;
   }
 
   const userReactionEmoji = post.userReaction ? REACTIONS.find((r) => r.type === post.userReaction)?.emoji : null;
@@ -142,6 +187,13 @@ export default function FeedCard({
     <article data-post-id={post.id} data-post-type={post.type} className="bg-surface-container-lowest rounded-xl p-8 editorial-shadow relative card-hover">
       {animatingReaction?.postId === post.id && (
         <div className="reaction-animate top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">{animatingReaction.emoji}</div>
+      )}
+
+      {post.is_boosted && (
+        <div className="absolute top-4 right-4 bg-tertiary-fixed/20 text-tertiary px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1 z-10">
+          <span className="material-symbols-outlined text-sm">rocket_launch</span>
+          Boosted
+        </div>
       )}
 
       <div className="flex items-start justify-between mb-6">
@@ -160,12 +212,17 @@ export default function FeedCard({
               <span className="material-symbols-outlined">delete</span>
             </button>
           )}
-          <div className="relative">
+          <div className="relative" ref={menuRef}>
             <button onClick={() => setOpenMenu(!openMenu)} className="text-on-surface-variant hover:text-primary transition-colors p-2">
               <span className="material-symbols-outlined">more_vert</span>
             </button>
             {openMenu && (
-              <div className="absolute right-0 top-full mt-1 bg-surface-container-lowest rounded-xl shadow-xl border border-outline-variant/20 z-50 overflow-hidden w-36">
+              <div className="absolute right-0 top-full mt-1 bg-surface-container-lowest rounded-xl shadow-xl border border-outline-variant/20 z-50 overflow-hidden w-44">
+                {currentUserId && post.authorId === currentUserId && (
+                  <Link href={`/boost?post=${post.id}`} onClick={() => setOpenMenu(false)} className="w-full text-left px-4 py-2.5 text-sm text-on-surface hover:bg-surface-container-low flex items-center gap-2">
+                    <span className="material-symbols-outlined text-sm">rocket_launch</span> Boost Post
+                  </Link>
+                )}
                 <button onClick={() => { onReport(post.type, post.id); setOpenMenu(false); }} className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
                   <span className="material-symbols-outlined text-sm">flag</span> Report
                 </button>
@@ -197,7 +254,7 @@ export default function FeedCard({
               <span className="text-sm font-medium">{post.likes || post.prayers || 0}</span>
             </button>
             {openReactionId === post.id && (
-              <div className="absolute bottom-full left-0 mb-2 bg-white rounded-full shadow-xl border p-1.5 flex items-center gap-1 z-50 animate-in fade-in zoom-in duration-200">
+              <div className="absolute bottom-full left-0 mb-2 bg-surface-container-lowest rounded-full shadow-xl border border-outline-variant/20 p-1.5 flex items-center gap-1 z-50 animate-in fade-in zoom-in duration-200">
                 {REACTIONS.map((r) => (
                   <button key={r.type} onClick={() => onReact(post.id, post.type, r.type)} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high hover:scale-125 transition-all">
                     <span className="text-xl">{r.emoji}</span>
@@ -218,8 +275,18 @@ export default function FeedCard({
         <div className="mt-4 pt-4 border-t border-outline-variant/10">
           <div className="flex items-start gap-3 mb-4">
             <div className="flex-1 relative">
-              <input type="text" placeholder="Write a comment..." value={newComment} onChange={(e) => setNewComment(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handlePostComment()} className="w-full bg-surface-container-high rounded-xl px-4 py-2.5 text-sm" />
-              <button onClick={handlePostComment} disabled={!newComment.trim() || postingComment} className="absolute right-2 top-1/2 -translate-y-1/2 text-primary disabled:opacity-30"><span className="material-symbols-outlined text-lg">send</span></button>
+              <input type="text" placeholder="Write a comment..." value={newComment} onChange={(e) => setNewComment(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handlePostComment()} className="w-full bg-surface-container-high rounded-xl px-4 py-2.5 pr-16 text-sm" />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                <div className="relative">
+                  <button onClick={() => setShowStickerPicker(!showStickerPicker)} className="text-on-surface-variant hover:text-primary transition-colors" title="Stickers">
+                    <span className="material-symbols-outlined text-lg">sentiment_satisfied</span>
+                  </button>
+                  {showStickerPicker && (
+                    <StickerPicker onSelect={handleStickerSelect} onClose={() => setShowStickerPicker(false)} />
+                  )}
+                </div>
+                <button onClick={handlePostComment} disabled={!newComment.trim() || postingComment} className="text-primary disabled:opacity-30"><span className="material-symbols-outlined text-lg">send</span></button>
+              </div>
             </div>
           </div>
           {commentsLoading ? (
@@ -243,7 +310,7 @@ export default function FeedCard({
                           )}
                         </div>
                       </div>
-                      <p className="text-sm text-on-surface-variant">{c.text}</p>
+                      <p className="text-sm text-on-surface-variant">{renderCommentText(c.text)}</p>
                     </div>
                   </div>
                   {replyingTo === c.id && (
@@ -253,7 +320,7 @@ export default function FeedCard({
                       ) : (repliesData[c.id] || []).map((r: any) => (
                         <div key={r.id} className="bg-surface-container-high rounded-lg px-3 py-1.5">
                           <span className="font-semibold text-xs">{r.user?.full_name || "User"}</span>
-                          <p className="text-xs text-on-surface-variant">{r.text}</p>
+                          <p className="text-xs text-on-surface-variant">{renderCommentText(r.text)}</p>
                         </div>
                       ))}
                       <div className="flex gap-2">
