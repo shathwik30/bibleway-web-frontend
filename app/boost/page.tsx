@@ -7,6 +7,7 @@ import MainLayout from "../components/MainLayout";
 import { fetchAPI } from "../lib/api";
 import Shimmer from "../components/Shimmer";
 import { useToast } from "../components/Toast";
+import { openRazorpayCheckout, RazorpayPaymentResponse } from "../lib/razorpay";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -49,29 +50,32 @@ interface Boost {
 
 interface Tier {
   id: string;
+  apiTier: string; // maps to the backend tier name
   name: string;
   days: number;
-  price: number;
+  price: number; // in INR
   description: string;
   multiplier: string;
   popular?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
-/*  Constants                                                          */
+/*  Constants – pricing from API spec                                  */
 /* ------------------------------------------------------------------ */
 
 const TIERS: Tier[] = [
   {
     id: "starter",
+    apiTier: "boost_tier_1",
     name: "Starter",
-    days: 3,
+    days: 7,
     price: 99,
     description: "Great for testing the waters",
     multiplier: "2x",
   },
   {
     id: "growth",
+    apiTier: "boost_tier_2",
     name: "Growth",
     days: 7,
     price: 249,
@@ -81,16 +85,14 @@ const TIERS: Tier[] = [
   },
   {
     id: "premium",
+    apiTier: "boost_tier_3",
     name: "Premium",
-    days: 30,
-    price: 699,
+    days: 7,
+    price: 499,
     description: "Maximum visibility",
     multiplier: "10x",
   },
 ];
-
-const RAZORPAY_KEY = "rzp_live_SZOPOcQK3gFjQb";
-const PRIMARY_COLOR = "#59021a";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -121,24 +123,6 @@ function getRemainingDays(expiresAt: string | null): number {
   if (!expiresAt) return 0;
   const diff = new Date(expiresAt).getTime() - Date.now();
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-}
-
-/* ------------------------------------------------------------------ */
-/*  Razorpay loader                                                    */
-/* ------------------------------------------------------------------ */
-
-function loadRazorpayScript(): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (typeof window !== "undefined" && (window as any).Razorpay) {
-      resolve(true);
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.body.appendChild(script);
-  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -328,7 +312,10 @@ function BoostContent() {
     }
   }, [step, router]);
 
-  /* Razorpay checkout */
+  /* ──────────────────────────────────────────────────────────────── */
+  /*  Razorpay 3-step checkout                                       */
+  /* ──────────────────────────────────────────────────────────────── */
+
   const handleBoostNow = useCallback(async () => {
     if (!selectedPost || !selectedTier || submitting) return;
 
@@ -336,33 +323,37 @@ function BoostContent() {
     setError(null);
 
     try {
-      const loaded = await loadRazorpayScript();
-      if (!loaded) {
-        throw new Error(
-          "Failed to load Razorpay. Please check your internet connection.",
-        );
-      }
-
       const userEmail = localStorage.getItem("user_email") || "";
 
-      const options = {
-        key: RAZORPAY_KEY,
-        amount: selectedTier.price * 100, // paise
-        currency: "INR",
+      // Step 1: Create Razorpay order on backend
+      const orderRes = await fetchAPI("/analytics/boosts/razorpay/create-order/", {
+        method: "POST",
+        body: JSON.stringify({
+          post_id: selectedPost.id,
+          tier: selectedTier.apiTier,
+          duration_days: selectedTier.days,
+        }),
+      });
+      const order = orderRes.data || orderRes;
+
+      // Step 2 & 3: Open Razorpay checkout, then verify
+      await openRazorpayCheckout({
+        order,
         name: "Bibleway",
-        description: `Post Boost - ${selectedTier.name}`,
-        prefill: { email: userEmail },
-        theme: { color: PRIMARY_COLOR },
-        handler: async (response: any) => {
+        description: `Post Boost – ${selectedTier.name}`,
+        email: userEmail,
+        onSuccess: async (response: RazorpayPaymentResponse) => {
           try {
-            await fetchAPI("/analytics/boosts/", {
+            // Step 3: Verify payment
+            await fetchAPI("/analytics/boosts/razorpay/verify/", {
               method: "POST",
               body: JSON.stringify({
                 post_id: selectedPost.id,
-                tier: selectedTier.id,
-                platform: "web",
-                transaction_id: response.razorpay_payment_id,
+                tier: selectedTier.apiTier,
                 duration_days: selectedTier.days,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
               }),
             });
 
@@ -372,36 +363,25 @@ function BoostContent() {
               `Your post will be boosted for ${selectedTier.days} days.`,
             );
 
-            router.push("/analytics");
-          } catch (err: any) {
+            router.push("/boost/analytics");
+          } catch (verifyErr: any) {
             showToast(
               "error",
-              "Boost Failed",
-              err?.message || "Payment succeeded but boost creation failed. Contact support.",
+              "Verification Failed",
+              verifyErr?.message || "Payment succeeded but verification failed. Contact support.",
             );
-          } finally {
-            setSubmitting(false);
           }
         },
-        modal: {
-          ondismiss: () => {
-            setSubmitting(false);
-          },
+        onFailure: (errorMsg) => {
+          showToast("error", "Payment Failed", errorMsg);
         },
-      };
-
-      const rzp = new (window as any).Razorpay(options);
-      rzp.on("payment.failed", (resp: any) => {
-        showToast(
-          "error",
-          "Payment Failed",
-          resp?.error?.description || "Your payment could not be processed.",
-        );
-        setSubmitting(false);
+        onDismiss: () => {
+          // User closed checkout
+        },
       });
-      rzp.open();
     } catch (err: any) {
       setError(err?.message || "Something went wrong. Please try again.");
+    } finally {
       setSubmitting(false);
     }
   }, [selectedPost, selectedTier, submitting, router, showToast]);
@@ -435,7 +415,7 @@ function BoostContent() {
 
         {/* Error banner */}
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-6 text-red-700 text-sm flex items-center gap-2">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 mb-6 text-red-700 dark:text-red-400 text-sm flex items-center gap-2">
             <span className="material-symbols-outlined text-sm">error</span>
             {error}
           </div>
@@ -614,7 +594,7 @@ function BoostContent() {
             >
               {submitting ? (
                 <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-on-primary" />
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-on-primary/30 border-t-on-primary" />
                   Processing...
                 </>
               ) : (
@@ -633,7 +613,8 @@ function BoostContent() {
               )}
             </button>
 
-            <p className="text-center text-xs text-on-surface-variant mt-3">
+            <p className="text-center text-xs text-on-surface-variant/50 mt-3 flex items-center justify-center gap-1.5">
+              <span className="material-symbols-outlined text-sm">lock</span>
               Secure payment powered by Razorpay
             </p>
           </div>
@@ -664,7 +645,7 @@ function BoostContent() {
             <div className="space-y-3">
               {activeBoosts.map((boost) => {
                 const remaining = getRemainingDays(boost.expires_at);
-                const tierInfo = TIERS.find((t) => t.id === boost.tier);
+                const tierInfo = TIERS.find((t) => t.apiTier === boost.tier || t.id === boost.tier);
 
                 return (
                   <div
@@ -673,7 +654,7 @@ function BoostContent() {
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                        <span className="inline-flex items-center gap-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-bold px-2 py-0.5 rounded-full">
                           <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
                           Active
                         </span>
@@ -704,7 +685,7 @@ function BoostContent() {
                       </p>
                     </div>
                     <Link
-                      href={`/analytics`}
+                      href="/boost/analytics"
                       className="text-primary hover:underline text-sm font-medium flex items-center gap-1 flex-shrink-0"
                     >
                       <span className="material-symbols-outlined text-sm">

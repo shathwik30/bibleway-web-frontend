@@ -6,6 +6,7 @@ import DOMPurify from "dompurify";
 import GoogleSignInButton from "../../../components/GoogleSignInButton";
 import Footer from "../../../components/Footer";
 import { useTheme } from "../../../lib/ThemeContext";
+import { useToast } from "../../../components/Toast";
 
 function sanitizeHTML(html: string): string {
   if (typeof window === "undefined") return html;
@@ -145,6 +146,7 @@ export default function ReadChapterClient({
   bibleId: string;
   chapterId: string;
 }) {
+  const { showToast } = useToast();
   const [chapter, setChapter] = useState<ChapterData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -272,7 +274,7 @@ export default function ReadChapterClient({
           {/* Header */}
           <header className="mb-12">
             <div className="flex items-center space-x-3 mb-6">
-              <span className="bg-tertiary-fixed/20 text-on-tertiary-fixed-variant px-4 py-1 rounded-full text-xs font-bold tracking-widest uppercase">
+              <span className="bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary px-4 py-1 rounded-full text-xs font-bold tracking-widest uppercase">
                 Scripture
               </span>
               {chapter.bible_name && (
@@ -413,14 +415,17 @@ export default function ReadChapterClient({
                 Back to Bible
               </Link>
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (navigator.share) {
-                    navigator.share({
-                      title: chapter.reference,
-                      url: window.location.href,
-                    });
+                    try {
+                      await navigator.share({
+                        title: chapter.reference,
+                        url: window.location.href,
+                      });
+                    } catch { /* user cancelled */ }
                   } else {
-                    navigator.clipboard.writeText(window.location.href);
+                    await navigator.clipboard.writeText(window.location.href);
+                    showToast("success", "Link Copied", "Link copied to clipboard!");
                   }
                 }}
                 className="inline-flex items-center gap-2 text-sm font-medium text-on-surface-variant hover:text-primary transition-colors"

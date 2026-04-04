@@ -10,6 +10,7 @@ const PUBLIC_PATHS = [
   "/forgot-password",
   "/confirm-password-reset",
   "/verify-email",
+  "/complete-profile",
   "/landing",
 ];
 

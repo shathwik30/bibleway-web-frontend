@@ -448,7 +448,7 @@ export function useRemoveBookmark() {
 export function useAddHighlight() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { highlight_type: string; color: string; verse_reference?: string; content_type?: number; object_id?: string; selection_start?: number; selection_end?: number }) => {
+    mutationFn: async (payload: { highlight_type: string; color: string; selected_text?: string; verse_reference?: string; content_type?: number; object_id?: string; selection_start?: number; selection_end?: number }) => {
       return fetchAPI("/bible/highlights/", { method: "POST", body: JSON.stringify(payload) });
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["highlights"] }); },
