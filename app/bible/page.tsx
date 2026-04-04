@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
@@ -10,7 +10,8 @@ import Shimmer from "../components/Shimmer";
 import BibleStudyTools from "../components/BibleStudyTools";
 import TTSControls from "../components/TTSControls";
 import YouTubeSermons from "../components/YouTubeSermons";
-import { useBibles, useBooks, useChapters, useChapterContent, useStudySections, useStudyChapters, useStudyPages, useStudyPageDetail } from "../lib/hooks";
+import { useBibles, useBooks, useChapters, useChapterContent, useStudySections, useStudyChapters, useStudyPages, useStudyPageDetail, useBookmarks, useNotes, useAddBookmark, useRemoveBookmark, useAddNote, useRemoveNote, useUpdateNote, useBibleSearch, useApiBibleSearch } from "../lib/hooks";
+import { translateText, LANGUAGES, DEFAULT_LANGUAGE, type Language } from "../lib/translate";
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -52,19 +53,141 @@ export function formatVerseRef(ref: string): string {
   return `${bookName} ${parts[1]}:${parts[2]}`;
 }
 
+// ─── Language Selector dropdown ──────────────────────────────────
+function LanguageSelector({
+  selectedLang,
+  onSelect,
+  isTranslating,
+}: {
+  selectedLang: string;
+  onSelect: (code: string) => void;
+  isTranslating: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setSearch("");
+      }
+    }
+    if (open) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const currentLang = LANGUAGES.find((l) => l.code === selectedLang) || LANGUAGES[0];
+  const filtered = LANGUAGES.filter(
+    (l) =>
+      l.name.toLowerCase().includes(search.toLowerCase()) ||
+      l.nativeName.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  return (
+    <div ref={dropdownRef} className="relative inline-block">
+      <button
+        onClick={() => setOpen(!open)}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-container-lowest border border-outline-variant/15 hover:border-primary/30 text-sm text-on-surface-variant hover:text-on-surface transition-all"
+      >
+        <span className="material-symbols-outlined text-base">translate</span>
+        <span className="font-medium">{currentLang.name}</span>
+        {isTranslating ? (
+          <span className="w-3.5 h-3.5 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />
+        ) : (
+          <span className="material-symbols-outlined text-base">{open ? "expand_less" : "expand_more"}</span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-64 max-h-80 bg-surface-container-lowest rounded-xl border border-outline-variant/15 shadow-xl overflow-hidden">
+          <div className="p-2 border-b border-outline-variant/10">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search languages..."
+              autoFocus
+              className="w-full px-3 py-2 rounded-lg bg-surface-container-low text-sm text-on-surface placeholder:text-on-surface-variant/40 outline-none focus:ring-1 focus:ring-primary/30"
+            />
+          </div>
+          <div className="overflow-y-auto max-h-60 custom-scrollbar">
+            {filtered.map((lang) => (
+              <button
+                key={lang.code}
+                onClick={() => {
+                  onSelect(lang.code);
+                  setOpen(false);
+                  setSearch("");
+                }}
+                className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between ${
+                  lang.code === selectedLang
+                    ? "bg-primary/10 text-primary font-semibold"
+                    : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"
+                }`}
+              >
+                <span>{lang.name}</span>
+                <span className="text-xs text-on-surface-variant/50">{lang.nativeName}</span>
+              </button>
+            ))}
+            {filtered.length === 0 && (
+              <p className="px-4 py-6 text-sm text-on-surface-variant/50 text-center">No languages found</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Step type for the Standard Reader flow ────────────────────
 type ReaderStep = "pick-bible" | "pick-book" | "pick-chapter" | "reading";
 // ─── Step type for the Study flow ──────────────────────────────
 type StudyStep = "pick-section" | "pick-module" | "reading";
 
+type TabKey = "standard" | "study" | "search" | "bookmarks" | "notes";
+
+// ─── LocalStorage helpers for highlight selected_text ────────────
+function getHighlightTextMap(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(localStorage.getItem("highlight_text_map") || "{}");
+  } catch { return {}; }
+}
+
+function saveHighlightText(highlightId: string, text: string) {
+  if (typeof window === "undefined") return;
+  const map = getHighlightTextMap();
+  map[highlightId] = text;
+  localStorage.setItem("highlight_text_map", JSON.stringify(map));
+}
+
+function removeHighlightText(highlightId: string) {
+  if (typeof window === "undefined") return;
+  const map = getHighlightTextMap();
+  delete map[highlightId];
+  localStorage.setItem("highlight_text_map", JSON.stringify(map));
+}
+
+function enrichHighlightsWithText(highlights: any[]): any[] {
+  const map = getHighlightTextMap();
+  return highlights.map((hl) => ({
+    ...hl,
+    selected_text: hl.selected_text || map[hl.id] || "",
+  }));
+}
+
 function BibleContent() {
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get("tab") === "study" ? "study" : "standard";
-  const [activeTab, setActiveTab] = useState<"standard" | "study">(initialTab);
+  const initialTab = (searchParams.get("tab") as TabKey) || "standard";
+  const validTabs: TabKey[] = ["standard", "study", "search", "bookmarks", "notes"];
+  const [activeTab, setActiveTab] = useState<TabKey>(validTabs.includes(initialTab) ? initialTab : "standard");
 
   useEffect(() => {
-    const tab = searchParams.get("tab");
-    if (tab === "study" || tab === "standard") setActiveTab(tab);
+    const tab = searchParams.get("tab") as TabKey;
+    if (validTabs.includes(tab)) setActiveTab(tab);
   }, [searchParams]);
 
   // ═══════════════════════════════════════════════════════════════
@@ -80,6 +203,63 @@ function BibleContent() {
   const { data: books = [], isLoading: booksLoading } = useBooks(selectedBible?.id);
   const { data: chapters = [], isLoading: chaptersLoading } = useChapters(selectedBible?.id, selectedBook?.id);
   const { data: chapterData = null, isLoading: contentLoading } = useChapterContent(selectedBible?.id, selectedChapterId || null);
+
+  // ═══════════════════════════════════════════════════════════════
+  // TRANSLATION STATE
+  // ═══════════════════════════════════════════════════════════════
+  const [selectedLang, setSelectedLang] = useState<string>(DEFAULT_LANGUAGE);
+  const [translatedContent, setTranslatedContent] = useState<string | null>(null);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const translationAbortRef = useRef(0); // Counter to abandon stale translations
+
+  // Reset language when chapter changes
+  useEffect(() => {
+    setSelectedLang(DEFAULT_LANGUAGE);
+    setTranslatedContent(null);
+  }, [selectedChapterId]);
+
+  // Translate content when language changes
+  useEffect(() => {
+    if (selectedLang === DEFAULT_LANGUAGE || !chapterData?.content) {
+      setTranslatedContent(null);
+      return;
+    }
+
+    const requestId = ++translationAbortRef.current;
+    setIsTranslating(true);
+
+    // Strip HTML tags for translation, then re-wrap in simple paragraphs
+    const plainText = chapterData.content.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+    translateText(plainText, selectedLang)
+      .then((result) => {
+        if (translationAbortRef.current === requestId) {
+          // Wrap translated text in paragraphs by splitting on double-newlines or periods with spacing
+          const paragraphs = result
+            .split(/\n\n+/)
+            .filter((p: string) => p.trim())
+            .map((p: string) => `<p>${p.trim()}</p>`)
+            .join("");
+          setTranslatedContent(paragraphs || `<p>${result}</p>`);
+        }
+      })
+      .catch((err) => {
+        if (translationAbortRef.current === requestId) {
+          console.error("Translation error:", err);
+          setTranslatedContent(null);
+          setSelectedLang(DEFAULT_LANGUAGE);
+        }
+      })
+      .finally(() => {
+        if (translationAbortRef.current === requestId) {
+          setIsTranslating(false);
+        }
+      });
+  }, [selectedLang, chapterData?.content]);
+
+  // The content to actually display (translated or original)
+  const displayContent = translatedContent || chapterData?.content || "";
+  const isRtl = LANGUAGES.find((l) => l.code === selectedLang)?.rtl ?? false;
 
   // ═══════════════════════════════════════════════════════════════
   // STUDY STATE (React Query cached)
@@ -98,6 +278,91 @@ function BibleContent() {
   useEffect(() => {
     if (pages.length > 0 && !selectedPageId) setSelectedPageId(pages[0].id);
   }, [pages]);
+
+  // ═══════════════════════════════════════════════════════════════
+  // SEARCH STATE (shared between inline search and Search tab)
+  // ═══════════════════════════════════════════════════════════════
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [inlineSearchOpen, setInlineSearchOpen] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const { data: segregatedResults = [], isLoading: segregatedSearchLoading } = useBibleSearch(debouncedSearch);
+  const { data: apiBibleResults, isLoading: apiBibleSearchLoading } = useApiBibleSearch(
+    selectedBible?.id || "",
+    selectedBible ? debouncedSearch : ""
+  );
+  const apiBibleVerses = apiBibleResults?.verses || [];
+
+  // ═══════════════════════════════════════════════════════════════
+  // BOOKMARKS STATE
+  // ═══════════════════════════════════════════════════════════════
+  const { data: bookmarksList = [], isLoading: bookmarksLoading } = useBookmarks();
+  const addBookmarkMut = useAddBookmark();
+  const removeBookmarkMut = useRemoveBookmark();
+
+  const currentChapterBookmarked = bookmarksList.some(
+    (bm: any) => bm.verse_reference === selectedChapterId
+  );
+  const currentBookmarkId = bookmarksList.find(
+    (bm: any) => bm.verse_reference === selectedChapterId
+  )?.id;
+
+  function handleToggleBookmark() {
+    if (!selectedChapterId) return;
+    if (currentChapterBookmarked && currentBookmarkId) {
+      removeBookmarkMut.mutate(currentBookmarkId);
+    } else {
+      addBookmarkMut.mutate(selectedChapterId);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // NOTES STATE
+  // ═══════════════════════════════════════════════════════════════
+  const { data: notesList = [], isLoading: notesLoading } = useNotes();
+  const addNoteMut = useAddNote();
+  const removeNoteMut = useRemoveNote();
+  const updateNoteMut = useUpdateNote();
+  const [newNoteText, setNewNoteText] = useState("");
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editNoteText, setEditNoteText] = useState("");
+
+  function handleAddNote() {
+    if (!newNoteText.trim() || !selectedChapterId) return;
+    addNoteMut.mutate(
+      { verse_reference: selectedChapterId, text: newNoteText.trim() },
+      { onSuccess: () => setNewNoteText("") }
+    );
+  }
+
+  function handleStartEditNote(note: any) {
+    setEditingNoteId(note.id);
+    setEditNoteText(note.text);
+  }
+
+  function handleSaveEditNote() {
+    if (!editingNoteId || !editNoteText.trim()) return;
+    updateNoteMut.mutate(
+      { id: editingNoteId, text: editNoteText.trim() },
+      { onSuccess: () => { setEditingNoteId(null); setEditNoteText(""); } }
+    );
+  }
+
+  // ─── Inline search click-outside handler ─────────────────────
+  const inlineSearchRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (inlineSearchRef.current && !inlineSearchRef.current.contains(e.target as Node)) {
+        setInlineSearchOpen(false);
+      }
+    }
+    if (inlineSearchOpen) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [inlineSearchOpen]);
 
   // ─── Highlight state for visual rendering ───────────────────
   const [activeHighlights, setActiveHighlights] = useState<any[]>([]);
@@ -131,6 +396,7 @@ function BibleContent() {
 
   async function handleHighlightSelection(color: string) {
     if (!selectionPopup || !selectedChapterId) return;
+    const selectedText = selectionPopup.text;
     try {
       const res = await fetchAPI("/bible/highlights/", {
         method: "POST",
@@ -138,12 +404,14 @@ function BibleContent() {
           highlight_type: "api_bible",
           verse_reference: selectedChapterId,
           color,
-          selected_text: selectionPopup.text,
         }),
       });
       const newHl = res.data || res;
-      // Store the selected text locally even if backend doesn't return it
-      if (!newHl.selected_text) newHl.selected_text = selectionPopup.text;
+      // Backend doesn't store selected_text, so persist it in localStorage
+      if (newHl.id) {
+        saveHighlightText(newHl.id, selectedText);
+      }
+      newHl.selected_text = selectedText;
       setActiveHighlights((prev) => [...prev, newHl]);
       setSelectionPopup(null);
       window.getSelection()?.removeAllRanges();
@@ -300,19 +568,23 @@ function BibleContent() {
       <div className="flex flex-col items-center">
         {/* Tab Navigation */}
         <div className="w-full max-w-7xl px-4 sm:px-6 lg:px-8 mt-8 mb-6">
-          <div className="flex gap-8 sm:gap-12 border-b border-outline-variant/20">
-            <button
-              onClick={() => setActiveTab("standard")}
-              className={`pb-3 text-lg sm:text-xl font-headline transition-colors ${activeTab === "standard" ? "border-b-2 border-primary text-on-surface" : "text-on-surface-variant/50 hover:text-on-surface"}`}
-            >
-              Bible
-            </button>
-            <button
-              onClick={() => setActiveTab("study")}
-              className={`pb-3 text-lg sm:text-xl font-headline transition-colors ${activeTab === "study" ? "border-b-2 border-primary text-on-surface" : "text-on-surface-variant/50 hover:text-on-surface"}`}
-            >
-              Study
-            </button>
+          <div className="flex gap-6 sm:gap-10 border-b border-outline-variant/20 overflow-x-auto">
+            {([
+              { key: "standard" as TabKey, label: "Bible", icon: "menu_book" },
+              { key: "study" as TabKey, label: "Study", icon: "school" },
+              { key: "search" as TabKey, label: "Search", icon: "search" },
+              { key: "bookmarks" as TabKey, label: "Bookmarks", icon: "bookmark" },
+              { key: "notes" as TabKey, label: "Notes", icon: "edit_note" },
+            ]).map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`pb-3 text-base sm:text-lg font-headline transition-colors whitespace-nowrap flex items-center gap-1.5 ${activeTab === tab.key ? "border-b-2 border-primary text-on-surface" : "text-on-surface-variant/50 hover:text-on-surface"}`}
+              >
+                <span className="material-symbols-outlined text-lg">{tab.icon}</span>
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -340,6 +612,90 @@ function BibleContent() {
                   <span className="material-symbols-outlined text-xs">chevron_right</span>
                   <span className="text-primary font-semibold">{chapterData.reference}</span>
                 </>
+              )}
+            </div>
+
+            {/* Inline Search Bar */}
+            <div ref={inlineSearchRef} className="relative mb-6">
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-lg">search</span>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setInlineSearchOpen(true); }}
+                  onFocus={() => { if (searchQuery.trim()) setInlineSearchOpen(true); }}
+                  placeholder="Search the Bible..."
+                  className="w-full pl-11 pr-10 py-2.5 rounded-xl bg-surface-container-lowest border border-outline-variant/15 text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 text-sm transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => { setSearchQuery(""); setInlineSearchOpen(false); }}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 hover:text-on-surface transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-lg">close</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Inline search results dropdown */}
+              {inlineSearchOpen && debouncedSearch && (
+                <div className="absolute z-50 mt-1 w-full max-h-80 bg-surface-container-lowest rounded-xl border border-outline-variant/15 shadow-xl overflow-hidden">
+                  <div className="overflow-y-auto max-h-80 custom-scrollbar">
+                    {(segregatedSearchLoading || apiBibleSearchLoading) ? (
+                      <div className="flex items-center justify-center py-6">
+                        <span className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                        <span className="ml-2 text-sm text-on-surface-variant/60">Searching...</span>
+                      </div>
+                    ) : (
+                      <>
+                        {apiBibleVerses.length > 0 && (
+                          <div className="p-2">
+                            <p className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60 px-2 py-1">Bible Verses</p>
+                            {apiBibleVerses.slice(0, 8).map((v: any) => (
+                              <button
+                                key={v.id}
+                                onClick={() => {
+                                  if (v.chapterId) {
+                                    setSelectedChapterId(v.chapterId);
+                                    setReaderStep("reading");
+                                  }
+                                  setInlineSearchOpen(false);
+                                }}
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-surface-container-low transition-colors"
+                              >
+                                <p className="text-sm font-semibold text-primary">{v.reference}</p>
+                                <p className="text-xs text-on-surface-variant line-clamp-1">{v.text?.replace(/<[^>]+>/g, "")}</p>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {segregatedResults.length > 0 && (
+                          <div className="p-2 border-t border-outline-variant/10">
+                            <p className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60 px-2 py-1">Study Content</p>
+                            {segregatedResults.slice(0, 5).map((r: any) => (
+                              <div key={r.id} className="px-3 py-2 rounded-lg hover:bg-surface-container-low transition-colors">
+                                <p className="text-sm font-semibold text-on-surface">{r.title}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {apiBibleVerses.length === 0 && segregatedResults.length === 0 && (
+                          <div className="py-6 text-center">
+                            <p className="text-sm text-on-surface-variant/60">No results for &ldquo;{debouncedSearch}&rdquo;</p>
+                          </div>
+                        )}
+                        {(apiBibleVerses.length > 8 || segregatedResults.length > 5) && (
+                          <button
+                            onClick={() => { setActiveTab("search"); setInlineSearchOpen(false); }}
+                            className="w-full py-2.5 text-center text-sm text-primary font-semibold hover:bg-surface-container-low transition-colors border-t border-outline-variant/10"
+                          >
+                            View all results
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
 
@@ -468,7 +824,7 @@ function BibleContent() {
                 {/* Content */}
                 <div className="flex-1 xl:order-1">
                   <header className="mb-8">
-                    <span className="text-xs font-label uppercase tracking-[0.3em] text-on-tertiary-fixed-variant bg-tertiary-fixed/30 px-3 py-1 rounded-full mb-4 inline-block">
+                    <span className="text-xs font-label uppercase tracking-[0.3em] text-on-primary-container bg-primary-container px-3 py-1 rounded-full mb-4 inline-block">
                       {selectedBook?.name}
                     </span>
                     <h1 className="text-3xl sm:text-4xl md:text-5xl font-headline text-on-surface mb-4">
@@ -476,7 +832,32 @@ function BibleContent() {
                     </h1>
                   </header>
 
-                  <TTSControls content={chapterData?.content || null} chapterId={selectedChapterId} />
+                  <div className="flex flex-wrap items-center gap-3 mb-2">
+                    <TTSControls content={chapterData?.content || null} chapterId={selectedChapterId} />
+                    <LanguageSelector
+                      selectedLang={selectedLang}
+                      onSelect={setSelectedLang}
+                      isTranslating={isTranslating}
+                    />
+                    <button
+                      onClick={handleToggleBookmark}
+                      disabled={addBookmarkMut.isPending || removeBookmarkMut.isPending}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-sm transition-all disabled:opacity-50 ${
+                        currentChapterBookmarked
+                          ? "bg-primary/10 border-primary/20 text-primary"
+                          : "bg-surface-container-lowest border-outline-variant/15 text-on-surface-variant hover:border-primary/30 hover:text-primary"
+                      }`}
+                      title={currentChapterBookmarked ? "Remove bookmark" : "Bookmark this chapter"}
+                    >
+                      <span
+                        className="material-symbols-outlined text-base"
+                        style={currentChapterBookmarked ? { fontVariationSettings: "'FILL' 1" } : undefined}
+                      >
+                        bookmark
+                      </span>
+                      <span className="font-medium">{currentChapterBookmarked ? "Bookmarked" : "Bookmark"}</span>
+                    </button>
+                  </div>
 
                   {contentLoading ? (
                     <div className="space-y-4 mt-6">
@@ -488,7 +869,26 @@ function BibleContent() {
                   ) : (
                     <>
                       <div ref={articleRef} className="relative">
+                        {isTranslating && (
+                          <div className="flex items-center gap-2 mb-4 px-4 py-2.5 rounded-xl bg-primary/5 border border-primary/10 text-sm text-primary">
+                            <span className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin shrink-0" />
+                            Translating to {LANGUAGES.find((l) => l.code === selectedLang)?.name || selectedLang}...
+                          </div>
+                        )}
+                        {translatedContent && !isTranslating && (
+                          <div className="flex items-center gap-2 mb-4 px-4 py-2 rounded-xl bg-surface-container-low text-xs text-on-surface-variant/60">
+                            <span className="material-symbols-outlined text-sm">translate</span>
+                            Translated to {LANGUAGES.find((l) => l.code === selectedLang)?.name}
+                            <button
+                              onClick={() => setSelectedLang(DEFAULT_LANGUAGE)}
+                              className="ml-auto text-primary hover:text-primary/80 font-medium transition-colors"
+                            >
+                              Show original
+                            </button>
+                          </div>
+                        )}
                         <article
+                          dir={isRtl ? "rtl" : "ltr"}
                           className="bible-content space-y-4 text-on-surface font-body leading-[1.9] max-w-none mt-6
                             [&>p]:mb-5 [&>p]:text-base [&>p]:sm:text-lg [&>p]:pl-4 [&>p]:border-l-2 [&>p]:border-transparent
                             [&_.v]:text-primary/60 [&_.v]:text-xs [&_.v]:font-bold [&_.v]:align-super [&_.v]:mr-1
@@ -496,7 +896,7 @@ function BibleContent() {
                             [&_blockquote]:my-6 [&_blockquote]:bg-primary/5 [&_blockquote]:rounded-r-lg [&_blockquote]:italic
                             [&_h3]:text-2xl [&_h3]:font-headline [&_h3]:mt-8 [&_h3]:mb-4
                             [&_h4]:text-xl [&_h4]:font-headline [&_h4]:mt-6 [&_h4]:mb-3"
-                          dangerouslySetInnerHTML={{ __html: sanitizeHTML(applyHighlightsToContent(chapterData?.content || "<p>Select a chapter to begin reading</p>")) }}
+                          dangerouslySetInnerHTML={{ __html: sanitizeHTML(applyHighlightsToContent(displayContent || "<p>Select a chapter to begin reading</p>")) }}
                         />
 
                         {/* Floating highlight toolbar on text selection */}
@@ -684,6 +1084,313 @@ function BibleContent() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════ SEARCH TAB ══════════════ */}
+        {activeTab === "search" && (
+          <div className="w-full max-w-7xl px-4 sm:px-6 lg:px-8 pb-32">
+            <h1 className="text-3xl sm:text-4xl font-headline text-on-surface mb-2">Search the Bible</h1>
+            <p className="text-on-surface-variant mb-6">Search across Bible verses and study content.</p>
+
+            <div className="relative mb-8">
+              <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant/40">search</span>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search verses, topics, keywords..."
+                autoFocus
+                className="w-full pl-12 pr-4 py-3.5 rounded-xl bg-surface-container-lowest border border-outline-variant/15 text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 text-base transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant/40 hover:text-on-surface transition-colors"
+                >
+                  <span className="material-symbols-outlined text-lg">close</span>
+                </button>
+              )}
+            </div>
+
+            {(segregatedSearchLoading || apiBibleSearchLoading) && debouncedSearch ? (
+              <div className="space-y-3">
+                {[1, 2, 3, 4].map((i) => <Shimmer key={i} className="h-20 rounded-xl" />)}
+              </div>
+            ) : debouncedSearch ? (
+              <div className="space-y-6">
+                {/* API Bible results */}
+                {apiBibleVerses.length > 0 && (
+                  <div>
+                    <label className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60 block mb-3">
+                      Bible Verses ({apiBibleVerses.length})
+                    </label>
+                    <div className="space-y-3">
+                      {apiBibleVerses.map((v: any) => (
+                        <button
+                          key={v.id}
+                          onClick={() => {
+                            if (v.chapterId) {
+                              setSelectedChapterId(v.chapterId);
+                              setReaderStep("reading");
+                              setActiveTab("standard");
+                            }
+                          }}
+                          className="w-full text-left p-4 rounded-xl bg-surface-container-lowest border border-outline-variant/15 hover:border-primary/30 hover:shadow-md transition-all group"
+                        >
+                          <p className="text-sm font-semibold text-primary mb-1">{v.reference}</p>
+                          <p className="text-base text-on-surface-variant line-clamp-2">{v.text?.replace(/<[^>]+>/g, "")}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Segregated/study results */}
+                {segregatedResults.length > 0 && (
+                  <div>
+                    <label className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60 block mb-3">
+                      Study Content ({segregatedResults.length})
+                    </label>
+                    <div className="space-y-3">
+                      {segregatedResults.map((r: any) => (
+                        <div
+                          key={r.id}
+                          className="p-4 rounded-xl bg-surface-container-lowest border border-outline-variant/15"
+                        >
+                          <p className="text-sm font-semibold text-on-surface">{r.title}</p>
+                          {r.chapter && <p className="text-xs text-on-surface-variant/60 mt-1">Chapter: {r.chapter}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {apiBibleVerses.length === 0 && segregatedResults.length === 0 && (
+                  <div className="py-16 text-center">
+                    <span className="material-symbols-outlined text-6xl text-on-surface-variant/20 mb-4 block">search_off</span>
+                    <p className="text-on-surface-variant/60 text-lg">No results found for &ldquo;{debouncedSearch}&rdquo;</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="py-16 text-center">
+                <span className="material-symbols-outlined text-6xl text-on-surface-variant/20 mb-4 block">search</span>
+                <p className="text-on-surface-variant/60 text-lg">Start typing to search the Bible</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════ BOOKMARKS TAB ══════════════ */}
+        {activeTab === "bookmarks" && (
+          <div className="w-full max-w-7xl px-4 sm:px-6 lg:px-8 pb-32">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h1 className="text-3xl sm:text-4xl font-headline text-on-surface mb-2">Bookmarks</h1>
+                <p className="text-on-surface-variant">Your saved Bible passages.</p>
+              </div>
+              {selectedChapterId && readerStep === "reading" && (
+                <button
+                  onClick={handleToggleBookmark}
+                  disabled={addBookmarkMut.isPending || removeBookmarkMut.isPending}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 ${
+                    currentChapterBookmarked
+                      ? "bg-primary/15 text-primary"
+                      : "bg-primary text-on-primary hover:bg-primary/90"
+                  }`}
+                >
+                  <span
+                    className="material-symbols-outlined text-lg"
+                    style={currentChapterBookmarked ? { fontVariationSettings: "'FILL' 1" } : undefined}
+                  >
+                    bookmark
+                  </span>
+                  {currentChapterBookmarked ? "Bookmarked" : "Bookmark Current"}
+                </button>
+              )}
+            </div>
+
+            {bookmarksLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => <Shimmer key={i} className="h-16 rounded-xl" />)}
+              </div>
+            ) : bookmarksList.length > 0 ? (
+              <div className="space-y-3">
+                {bookmarksList.map((bm: any) => (
+                  <div
+                    key={bm.id}
+                    className="flex items-center justify-between p-4 rounded-xl bg-surface-container-lowest border border-outline-variant/15 hover:border-primary/30 transition-all group"
+                  >
+                    <button
+                      onClick={() => {
+                        if (bm.verse_reference) {
+                          handleSwitchChapter(bm.verse_reference);
+                          setReaderStep("reading");
+                          setActiveTab("standard");
+                        }
+                      }}
+                      className="flex items-center gap-3 text-left flex-1 min-w-0"
+                    >
+                      <span
+                        className="material-symbols-outlined text-primary text-xl"
+                        style={{ fontVariationSettings: "'FILL' 1" }}
+                      >
+                        bookmark
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-base font-semibold text-on-surface group-hover:text-primary transition-colors">
+                          {formatVerseRef(bm.verse_reference)}
+                        </p>
+                        <p className="text-xs text-on-surface-variant/60 mt-0.5">
+                          {bm.bookmark_type === "api_bible" ? "Bible" : "Study"} &middot; {new Date(bm.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => removeBookmarkMut.mutate(bm.id)}
+                      disabled={removeBookmarkMut.isPending}
+                      className="p-2 text-on-surface-variant/0 group-hover:text-red-500 transition-all rounded-lg hover:bg-red-50"
+                      title="Remove bookmark"
+                    >
+                      <span className="material-symbols-outlined text-lg">delete</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-16 text-center">
+                <span className="material-symbols-outlined text-6xl text-on-surface-variant/20 mb-4 block">bookmark</span>
+                <p className="text-on-surface-variant/60 text-lg">No bookmarks yet</p>
+                <p className="text-on-surface-variant/40 text-sm mt-2">Read a chapter and click &ldquo;Bookmark&rdquo; to save it here.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════ NOTES TAB ══════════════ */}
+        {activeTab === "notes" && (
+          <div className="w-full max-w-7xl px-4 sm:px-6 lg:px-8 pb-32">
+            <h1 className="text-3xl sm:text-4xl font-headline text-on-surface mb-2">Notes</h1>
+            <p className="text-on-surface-variant mb-6">Your personal Bible study notes.</p>
+
+            {/* Add note form */}
+            {selectedChapterId && (
+              <div className="mb-8 p-4 rounded-xl bg-surface-container-lowest border border-outline-variant/15">
+                <label className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60 block mb-2">
+                  Add note for {formatVerseRef(selectedChapterId)}
+                </label>
+                <div className="flex gap-3">
+                  <textarea
+                    value={newNoteText}
+                    onChange={(e) => setNewNoteText(e.target.value)}
+                    placeholder="Write your thoughts, reflections..."
+                    rows={2}
+                    className="flex-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:ring-1 focus:ring-primary/30 resize-none"
+                  />
+                  <button
+                    onClick={handleAddNote}
+                    disabled={addNoteMut.isPending || !newNoteText.trim()}
+                    className="self-end px-5 py-2.5 bg-primary text-on-primary rounded-xl text-sm font-semibold disabled:opacity-50 hover:bg-primary/90 transition-colors"
+                  >
+                    {addNoteMut.isPending ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!selectedChapterId && (
+              <div className="mb-8 p-4 rounded-xl bg-primary/5 border border-primary/10 text-sm text-primary flex items-center gap-2">
+                <span className="material-symbols-outlined text-lg">info</span>
+                Select a chapter in the Bible tab first to add a new note.
+              </div>
+            )}
+
+            {notesLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => <Shimmer key={i} className="h-24 rounded-xl" />)}
+              </div>
+            ) : notesList.length > 0 ? (
+              <div className="space-y-3">
+                {notesList.map((note: any) => (
+                  <div
+                    key={note.id}
+                    className="p-4 rounded-xl bg-surface-container-lowest border border-outline-variant/15 group"
+                  >
+                    {editingNoteId === note.id ? (
+                      <div className="space-y-3">
+                        <textarea
+                          value={editNoteText}
+                          onChange={(e) => setEditNoteText(e.target.value)}
+                          rows={3}
+                          autoFocus
+                          className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg px-4 py-3 text-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary/30 resize-none"
+                        />
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={() => { setEditingNoteId(null); setEditNoteText(""); }}
+                            className="px-3 py-1.5 rounded-lg text-sm text-on-surface-variant hover:bg-surface-container-low transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleSaveEditNote}
+                            disabled={updateNoteMut.isPending || !editNoteText.trim()}
+                            className="px-4 py-1.5 bg-primary text-on-primary rounded-lg text-sm font-semibold disabled:opacity-50 transition-colors"
+                          >
+                            {updateNoteMut.isPending ? "Saving..." : "Save"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-start justify-between mb-2">
+                          <button
+                            onClick={() => {
+                              if (note.verse_reference) {
+                                handleSwitchChapter(note.verse_reference);
+                                setReaderStep("reading");
+                                setActiveTab("standard");
+                              }
+                            }}
+                            className="text-sm font-semibold text-primary hover:text-primary/80 transition-colors"
+                          >
+                            {formatVerseRef(note.verse_reference) || "Untitled"}
+                          </button>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => handleStartEditNote(note)}
+                              className="p-1.5 text-on-surface-variant hover:text-primary rounded-lg hover:bg-surface-container-low transition-all"
+                              title="Edit note"
+                            >
+                              <span className="material-symbols-outlined text-sm">edit</span>
+                            </button>
+                            <button
+                              onClick={() => removeNoteMut.mutate(note.id)}
+                              disabled={removeNoteMut.isPending}
+                              className="p-1.5 text-on-surface-variant hover:text-red-500 rounded-lg hover:bg-red-50 transition-all"
+                              title="Delete note"
+                            >
+                              <span className="material-symbols-outlined text-sm">delete</span>
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-sm text-on-surface-variant leading-relaxed">{note.text}</p>
+                        <p className="text-[10px] text-on-surface-variant/40 mt-2">
+                          {new Date(note.created_at).toLocaleDateString()} {note.updated_at !== note.created_at && "(edited)"}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-16 text-center">
+                <span className="material-symbols-outlined text-6xl text-on-surface-variant/20 mb-4 block">edit_note</span>
+                <p className="text-on-surface-variant/60 text-lg">No notes yet</p>
+                <p className="text-on-surface-variant/40 text-sm mt-2">Read a chapter and add your thoughts here.</p>
               </div>
             )}
           </div>

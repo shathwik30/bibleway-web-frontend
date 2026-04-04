@@ -6,7 +6,7 @@ import MainLayout from "../../components/MainLayout";
 import { fetchAPI } from "../../lib/api";
 import Shimmer from "../../components/Shimmer";
 
-export default function MyPurchasesPage() {
+export default function DownloadsPage() {
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -16,7 +16,9 @@ export default function MyPurchasesPage() {
       try {
         const res = await fetchAPI("/shop/purchases/list/");
         setPurchases(res?.data?.results || res?.results || res?.data || []);
-      } catch { /* failed to load */ } finally {
+      } catch {
+        /* failed to load */
+      } finally {
         setLoading(false);
       }
     }
@@ -27,14 +29,18 @@ export default function MyPurchasesPage() {
     setDownloadingId(productId);
     try {
       const res = await fetchAPI(`/shop/downloads/${productId}/`);
-      const url = res.data?.url || res.url || res.data?.download_url || res.download_url;
+      const url =
+        res.data?.url ||
+        res.url ||
+        res.data?.download_url ||
+        res.download_url;
       if (url) {
         window.open(url, "_blank");
       } else {
         alert("Download not available.");
       }
     } catch {
-      alert("Download failed.");
+      alert("Download failed. Please try again.");
     } finally {
       setDownloadingId(null);
     }
@@ -45,19 +51,28 @@ export default function MyPurchasesPage() {
       <div className="max-w-7xl mx-auto px-6 pt-12 pb-32">
         <div className="flex items-center justify-between mb-12">
           <div>
-            <Link href="/shop" className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors mb-4">
+            <Link
+              href="/shop"
+              className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors mb-4"
+            >
               <span className="material-symbols-outlined">arrow_back</span>
               <span className="text-sm font-medium">Back to Shop</span>
             </Link>
-            <h1 className="text-4xl font-headline text-on-surface">My Purchases</h1>
-            <p className="text-on-surface-variant mt-2">Your purchased digital content.</p>
+            <h1 className="text-4xl font-headline text-on-surface">
+              My Downloads
+            </h1>
+            <p className="text-on-surface-variant mt-2">
+              Download your purchased content.
+            </p>
           </div>
           <Link
-            href="/shop/downloads"
+            href="/shop/purchases"
             className="hidden sm:inline-flex items-center gap-2 text-sm text-on-surface-variant hover:text-primary transition-colors"
           >
-            <span className="material-symbols-outlined text-lg">download</span>
-            My Downloads
+            <span className="material-symbols-outlined text-lg">
+              shopping_bag
+            </span>
+            View Purchases
           </Link>
         </div>
 
@@ -77,25 +92,48 @@ export default function MyPurchasesPage() {
               const product = purchase.product || purchase;
               const isDownloading = downloadingId === product.id;
               return (
-                <div key={purchase.id} className="bg-surface-container-lowest rounded-xl overflow-hidden editorial-shadow border border-outline-variant/10">
+                <div
+                  key={purchase.id}
+                  className="bg-surface-container-lowest rounded-xl overflow-hidden editorial-shadow border border-outline-variant/10"
+                >
                   <div className="aspect-[4/3] bg-surface-container-low flex items-center justify-center overflow-hidden">
                     {product.cover_image ? (
-                      <img src={product.cover_image} alt={product.title} className="w-full h-full object-cover" />
+                      <img
+                        src={product.cover_image}
+                        alt={product.title}
+                        className="w-full h-full object-cover"
+                      />
                     ) : (
-                      <span className="material-symbols-outlined text-6xl text-on-surface-variant/10">description</span>
+                      <span className="material-symbols-outlined text-6xl text-on-surface-variant/10">
+                        description
+                      </span>
                     )}
                   </div>
                   <div className="p-6">
-                    <h3 className="font-headline text-lg text-on-surface mb-1">{product.title}</h3>
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <h3 className="font-headline text-lg text-on-surface">
+                        {product.title}
+                      </h3>
+                      {product.category && (
+                        <span className="shrink-0 px-2 py-0.5 rounded-full bg-tertiary-fixed/20 text-on-tertiary-fixed-variant text-[10px] font-bold uppercase tracking-widest">
+                          {product.category}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-on-surface-variant mb-4">
-                      Purchased {new Date(purchase.created_at || purchase.purchased_at).toLocaleDateString()}
+                      Purchased{" "}
+                      {new Date(
+                        purchase.created_at || purchase.purchased_at
+                      ).toLocaleDateString()}
                     </p>
                     <button
                       onClick={() => handleDownload(product.id)}
                       disabled={isDownloading}
                       className="w-full py-3 rounded-xl bg-primary text-on-primary font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-all disabled:opacity-50"
                     >
-                      <span className="material-symbols-outlined text-lg">{isDownloading ? "hourglass_empty" : "download"}</span>
+                      <span className="material-symbols-outlined text-lg">
+                        {isDownloading ? "hourglass_empty" : "download"}
+                      </span>
                       {isDownloading ? "Preparing..." : "Download"}
                     </button>
                   </div>
@@ -105,9 +143,18 @@ export default function MyPurchasesPage() {
           </div>
         ) : (
           <div className="text-center py-24 bg-surface-container-low rounded-2xl">
-            <span className="material-symbols-outlined text-5xl text-on-surface-variant/20 mb-4 block">shopping_bag</span>
-            <p className="text-on-surface-variant text-lg mb-4">No purchases yet.</p>
-            <Link href="/shop" className="text-primary font-bold hover:underline">Browse the Shop</Link>
+            <span className="material-symbols-outlined text-5xl text-on-surface-variant/20 mb-4 block">
+              download
+            </span>
+            <p className="text-on-surface-variant text-lg mb-4">
+              No downloads yet.
+            </p>
+            <Link
+              href="/shop"
+              className="text-primary font-bold hover:underline"
+            >
+              Browse the Shop
+            </Link>
           </div>
         )}
       </div>

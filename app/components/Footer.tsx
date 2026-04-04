@@ -20,15 +20,27 @@ export default function Footer() {
           <ul className="space-y-4 text-sm text-on-surface-variant">
             <li>
               <Link href="/" className="hover:text-primary transition-colors">
-                Daily Verse
+                Home
               </Link>
             </li>
             <li>
-              <Link
-                href="/bible"
-                className="hover:text-primary transition-colors"
-              >
+              <Link href="/bible" className="hover:text-primary transition-colors">
                 Bible
+              </Link>
+            </li>
+            <li>
+              <Link href="/shop" className="hover:text-primary transition-colors">
+                Shop
+              </Link>
+            </li>
+            <li>
+              <Link href="/chat" className="hover:text-primary transition-colors">
+                Chat
+              </Link>
+            </li>
+            <li>
+              <Link href="/games" className="hover:text-primary transition-colors">
+                Games
               </Link>
             </li>
           </ul>

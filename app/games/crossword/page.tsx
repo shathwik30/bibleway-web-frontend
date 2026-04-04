@@ -137,7 +137,7 @@ export default function BibleCrosswordPage() {
   if (screen === "levels") {
     return (
       <MainLayout>
-        <div className="max-w-2xl mx-auto px-6 py-12">
+        <div className="max-w-7xl mx-auto px-6 py-12">
           <Link href="/games" className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors mb-6">
             <span className="material-symbols-outlined">arrow_back</span>
             <span className="text-sm font-medium">Games</span>
@@ -227,7 +227,7 @@ export default function BibleCrosswordPage() {
     <MainLayout>
       <div
         ref={containerRef}
-        className="max-w-5xl mx-auto px-4 sm:px-6 py-6 outline-none"
+        className="max-w-7xl mx-auto px-4 sm:px-6 py-6 outline-none"
         onKeyDown={(e) => { e.preventDefault(); handleKeyInput(e.key); }}
         tabIndex={0}
       >

@@ -11,8 +11,10 @@ export default function NotificationDropdown() {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Attempt to fetch unread count on mount. Fails silently if unauthenticated.
+    // Fetch on mount + poll every 15 seconds
     fetchUnreadCount();
+    const interval = setInterval(fetchUnreadCount, 15000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -28,9 +30,8 @@ export default function NotificationDropdown() {
   async function fetchUnreadCount() {
     try {
       const res = await fetchAPI("/notifications/unread-count/");
-      if (res?.unread_count !== undefined) {
-        setUnreadCount(res.unread_count);
-      }
+      const count = res?.data?.unread_count ?? res?.unread_count ?? 0;
+      setUnreadCount(count);
     } catch (e) {
       // Ignore auth errors on mount
     }

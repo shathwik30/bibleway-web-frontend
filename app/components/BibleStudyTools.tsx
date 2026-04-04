@@ -4,6 +4,29 @@ import { useState } from "react";
 import { fetchAPI } from "../lib/api";
 import { formatVerseRef } from "../bible/page";
 
+// Helper to enrich highlights with locally-stored selected_text
+function getHighlightTextMap(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(localStorage.getItem("highlight_text_map") || "{}");
+  } catch { return {}; }
+}
+
+function removeHighlightTextEntry(highlightId: string) {
+  if (typeof window === "undefined") return;
+  const map = getHighlightTextMap();
+  delete map[highlightId];
+  localStorage.setItem("highlight_text_map", JSON.stringify(map));
+}
+
+function enrichHighlights(highlights: any[]): any[] {
+  const map = getHighlightTextMap();
+  return highlights.map((hl) => ({
+    ...hl,
+    selected_text: hl.selected_text || map[hl.id] || "",
+  }));
+}
+
 interface BibleStudyToolsProps {
   selectedBibleId: string;
   selectedChapterId: string;
@@ -92,7 +115,8 @@ export default function BibleStudyTools({ selectedBibleId, selectedChapterId, on
     setHighlightsLoading(true);
     try {
       const res = await fetchAPI("/bible/highlights/?type=api_bible");
-      const data = res?.data?.results || res?.results || res?.data || [];
+      const raw = res?.data?.results || res?.results || res?.data || [];
+      const data = enrichHighlights(raw);
       setHighlights(data);
       setHighlightsLoaded(true);
       onHighlightsChange?.(data);
@@ -104,6 +128,7 @@ export default function BibleStudyTools({ selectedBibleId, selectedChapterId, on
   async function removeHighlight(id: string) {
     try {
       await fetchAPI(`/bible/highlights/${id}/`, { method: "DELETE" });
+      removeHighlightTextEntry(id);
       const updated = highlights.filter((hl) => hl.id !== id);
       setHighlights(updated);
       onHighlightsChange?.(updated);

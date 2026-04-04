@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import MainLayout from "../../components/MainLayout";
+import { STICKERS } from "../../components/StickerPicker";
 import { fetchAPI } from "../../lib/api";
 
 const REACTIONS = [
@@ -215,7 +216,17 @@ export default function SinglePostPage() {
             </div>
           </div>
 
-          <p className="text-on-surface text-lg leading-relaxed mb-6">{post.text_content}</p>
+          {(() => {
+            const stickerMatch = post.text_content?.match(/^\[sticker:(\w+)\]$/);
+            if (stickerMatch) {
+              const stickerId = stickerMatch[1];
+              const gifMatch = stickerId.match(/^gif_(\d+)$/);
+              if (gifMatch) return <div className="flex justify-center mb-6"><img src={`/stickers/sticker_${gifMatch[1]}.gif`} alt="Sticker" className="w-32 h-32 object-contain" /></div>;
+              const sticker = STICKERS.find((s) => s.id === stickerId);
+              if (sticker) return <p className="text-6xl text-center mb-6">{sticker.emoji}</p>;
+            }
+            return <p className="text-on-surface text-lg leading-relaxed mb-6">{post.text_content}</p>;
+          })()}
 
           {post.media?.[0] && (
             <div className="rounded-xl overflow-hidden mb-6 max-h-[500px] bg-surface-container-low flex items-center justify-center">

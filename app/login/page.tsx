@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchAPI } from "../lib/api";
+import GoogleSignInButton from "../components/GoogleSignInButton";
 
 function LoginForm() {
   const router = useRouter();
@@ -134,7 +135,7 @@ function LoginForm() {
         </button>
       </form>
 
-
+      <GoogleSignInButton />
 
       <p className="mt-10 text-sm text-on-surface-variant text-center">
         Don&apos;t have an account?{" "}

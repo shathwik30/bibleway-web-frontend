@@ -1,43 +1,109 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import MainLayout from "../../components/MainLayout";
+import StickerPicker from "../../components/StickerPicker";
 import { useChat } from "../../lib/ChatContext";
 import { fetchAPI } from "../../lib/api";
+
+interface MessageGroup {
+  senderId: string;
+  senderName: string;
+  isOwn: boolean;
+  messages: any[];
+}
 
 export default function ChatConversationPage() {
   const params = useParams();
   const router = useRouter();
-  const convId = Number(params.id);
-  const { messages, loadMessages, sendMessage, editMessage, deleteMessage, markRead, sendTyping, typingUsers, connected, getPresence, onlineUsers } = useChat();
+  const convId = params.id as string;
+  const {
+    messages, loadMessages, sendMessage,
+    markRead, sendTyping, typingUsers, getPresence, onlineUsers,
+    conversations,
+  } = useChat();
   const [text, setText] = useState("");
-  const [replyTo, setReplyTo] = useState<any>(null);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editText, setEditText] = useState("");
-  const [uploading, setUploading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [stickerOpen, setStickerOpen] = useState(false);
+  const [translations, setTranslations] = useState<Record<string, string>>({});
+  const [translating, setTranslating] = useState<Record<string, boolean>>({});
+  const [menuMsgId, setMenuMsgId] = useState<string | null>(null);
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   useEffect(() => { setCurrentUserId(localStorage.getItem("user_id")); }, []);
   const convMessages = messages[convId] || [];
   const typing = typingUsers[convId] || [];
+  const currentConv = conversations.find(c => c.id === convId);
+  const otherUser = currentConv?.other_user;
+
+  const msgPollRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   useEffect(() => {
-    if (convId) { loadMessages(convId); markRead(convId); getPresence(convId); }
+    if (convId) {
+      loadMessages(convId);
+      markRead(convId);
+      getPresence(convId);
+
+      // Poll messages every 5 seconds as fallback when WS is unavailable
+      msgPollRef.current = setInterval(() => {
+        loadMessages(convId);
+      }, 5000);
+    }
+    return () => {
+      clearInterval(msgPollRef.current);
+    };
   }, [convId, loadMessages, markRead, getPresence]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [convMessages.length]);
 
-  function handleSend() {
-    if (!text.trim() && !replyTo) return;
-    sendMessage(convId, text.trim(), replyTo ? { parentMessageId: replyTo.id } : {});
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + "px";
+    }
+  }, [text]);
+
+  // Group consecutive messages from same sender within 2 minutes
+  const groupedMessages = useMemo(() => {
+    const groups: MessageGroup[] = [];
+    for (const msg of convMessages) {
+      const senderId = msg.sender?.id || "";
+      const isOwn = senderId === currentUserId;
+      const lastGroup = groups[groups.length - 1];
+
+      if (
+        lastGroup &&
+        lastGroup.senderId === senderId
+      ) {
+        const lastMsgTime = new Date(lastGroup.messages[lastGroup.messages.length - 1].created_at).getTime();
+        const thisMsgTime = new Date(msg.created_at).getTime();
+        if (thisMsgTime - lastMsgTime < 2 * 60 * 1000) {
+          lastGroup.messages.push(msg);
+          continue;
+        }
+      }
+
+      groups.push({
+        senderId,
+        senderName: msg.sender?.full_name || "User",
+        isOwn,
+        messages: [msg],
+      });
+    }
+    return groups;
+  }, [convMessages, currentUserId]);
+
+  async function handleSend() {
+    if (!text.trim()) return;
+    await sendMessage(convId, text.trim());
     setText("");
-    setReplyTo(null);
+    setStickerOpen(false);
   }
 
   function handleTyping() {
@@ -46,185 +112,325 @@ export default function ChatConversationPage() {
     typingTimer.current = setTimeout(() => sendTyping(convId, false), 2000);
   }
 
-  function handleEdit(msg: any) {
-    setEditingId(msg.id);
-    setEditText(msg.text);
+  const [sending, setSending] = useState(false);
+  async function handleStickerSelect(stickerId: string) {
+    if (sending) return;
+    setSending(true);
+    setStickerOpen(false);
+    // Send as [sticker:N] (number only) to match mobile format
+    const numId = stickerId.startsWith("gif_") ? stickerId.replace("gif_", "") : stickerId;
+    await sendMessage(convId, `[sticker:${numId}]`);
+    setSending(false);
   }
 
-  function submitEdit() {
-    if (editingId && editText.trim()) {
-      editMessage(editingId, editText.trim());
-      setEditingId(null);
-      setEditText("");
+  function parseStickerMessage(text: string): { isSticker: boolean; stickerId: string } {
+    if (!text) return { isSticker: false, stickerId: "" };
+    const match = text.match(/^\[sticker:(.+)\]$/);
+    if (!match) return { isSticker: false, stickerId: "" };
+    const raw = match[1];
+    // Normalize: if raw is just a number like "42", treat as "gif_42"
+    // If raw is "gif_42", keep as-is
+    if (/^\d+$/.test(raw)) {
+      return { isSticker: true, stickerId: `gif_${raw}` };
     }
+    return { isSticker: true, stickerId: raw };
   }
 
-  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
+  async function handleTranslate(msgId: string) {
+    if (translating[msgId]) return;
+    // Toggle off if already translated
+    if (translations[msgId]) {
+      setTranslations(prev => { const n = { ...prev }; delete n[msgId]; return n; });
+      return;
+    }
+    setTranslating(prev => ({ ...prev, [msgId]: true }));
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("conversation_id", String(convId));
-      const res = await fetchAPI("/chat/upload/", { method: "POST", body: formData });
-      const data = res.data || res;
-      sendMessage(convId, "", { fileUrl: data.file_url, fileType: data.file_type, fileSize: data.file_size, fileName: data.file_name });
-    } catch {
-      alert("File upload failed. Please try again.");
-    } finally {
-      setUploading(false);
+      const userLang = localStorage.getItem("preferred_language") || navigator.language?.split("-")[0] || "en";
+      const targetLang = userLang === "en" ? "es" : userLang;
+      const res = await fetchAPI("/chat/messages/translate/", {
+        method: "POST",
+        body: JSON.stringify({ message_id: msgId, target_language: targetLang }),
+      });
+      const translated = res?.data?.translated_text || res?.translated_text || "";
+      if (translated) {
+        setTranslations(prev => ({ ...prev, [msgId]: translated }));
+      }
+    } catch (err: any) {
+      console.error("Translate failed:", err.message);
     }
+    setTranslating(prev => ({ ...prev, [msgId]: false }));
+  }
+
+
+  function renderSticker(stickerId: string) {
+    if (stickerId.startsWith("gif_")) {
+      const num = stickerId.replace("gif_", "");
+      return <img src={`/stickers/sticker_${num}.gif`} alt="Sticker" className="w-28 h-28 object-contain" />;
+    }
+    const EMOJI_MAP: Record<string, string> = {
+      praying: "\u{1F64F}", heart: "\u2764\uFE0F", fire: "\u{1F525}", cross: "\u271D\uFE0F",
+      dove: "\u{1F54A}\uFE0F", angel: "\u{1F47C}", church: "\u26EA", star: "\u2B50",
+      rainbow: "\u{1F308}", candle: "\u{1F56F}\uFE0F", raised_hands: "\u{1F64C}",
+      sparkling_heart: "\u{1F496}", folded_hands: "\u{1F932}", peace: "\u262E\uFE0F",
+      sunrise: "\u{1F305}", light: "\u{1F4A1}", crown: "\u{1F451}", olive_branch: "\u{1F343}",
+      open_book: "\u{1F4D6}", muscle: "\u{1F4AA}",
+    };
+    return <span className="text-6xl">{EMOJI_MAP[stickerId] || stickerId}</span>;
   }
 
   function formatTime(iso: string) {
     return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 
+  function renderBubble(msg: any, isOwn: boolean, isFirst: boolean, isLast: boolean) {
+    const { isSticker, stickerId } = parseStickerMessage(msg.text || "");
+    const ownCorners = "rounded-2xl rounded-br-sm";
+    const otherCorners = "rounded-2xl rounded-bl-sm";
+    const isMenuOpen = menuMsgId === msg.id;
+
+    return (
+      <div
+        key={msg.id}
+        className={`flex ${isOwn ? "justify-end" : "justify-start"} group/msg relative ${isLast ? "mb-0.5" : "mb-px"}`}
+      >
+        <div className="max-w-[90%] min-w-0">
+          {/* Sticker message - no bubble */}
+          {isSticker ? (
+            <div className={`flex ${isOwn ? "justify-end" : "justify-start"} px-1`}>
+              <div className="py-1">
+                {renderSticker(stickerId)}
+                <p className={`text-[10px] mt-1 ${isOwn ? "text-right" : "text-left"} text-on-surface-variant/40`}>
+                  {formatTime(msg.created_at)}
+                </p>
+              </div>
+            </div>
+          ) : (
+            /* Text message bubble */
+            <div
+              className={`${isOwn
+                ? ownCorners + " bg-primary text-on-primary"
+                : otherCorners + " bg-surface-container-high text-on-surface"
+              } px-3.5 py-2.5 cursor-pointer transition-colors relative w-fit min-w-[120px]`}
+              onClick={() => setMenuMsgId(isMenuOpen ? null : msg.id)}
+            >
+              {/* Message text */}
+              {msg.text && <p className="text-[14px] leading-relaxed whitespace-pre-wrap break-all">{msg.text}</p>}
+
+              {/* Translation */}
+              {translations[msg.id] && (
+                <div className={`mt-2 pt-2 border-t ${isOwn ? "border-white/20" : "border-outline-variant/20"}`}>
+                  <p className={`text-[11px] font-medium mb-0.5 ${isOwn ? "text-on-primary/50" : "text-on-surface-variant/50"}`}>Translated</p>
+                  <p className={`text-[13px] ${isOwn ? "text-on-primary/90" : "text-on-surface/80"}`}>
+                    {translations[msg.id]}
+                  </p>
+                </div>
+              )}
+
+              {/* Timestamp + read receipt */}
+              <div className={`flex items-center gap-1 mt-1.5 ${isOwn ? "justify-end" : "justify-start"}`}>
+                <span className={`text-[10px] ${isOwn ? "text-on-primary/50" : "text-on-surface-variant/40"}`}>
+                  {formatTime(msg.created_at)}
+                </span>
+                {isOwn && (
+                  <span className={`material-symbols-outlined text-[13px] ${msg.is_read ? "text-on-primary/70" : "text-on-primary/40"}`}>
+                    {msg.is_read ? "done_all" : "done"}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Action menu - tap to show (not just hover) */}
+          {isMenuOpen && !isSticker && (
+            <div className={`flex items-center gap-1 mt-1 ${isOwn ? "justify-end" : "justify-start"}`}>
+              {!isOwn && msg.text && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleTranslate(msg.id); setMenuMsgId(null); }}
+                  disabled={!!translating[msg.id]}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-on-surface-variant bg-surface-container-high hover:bg-surface-container-highest transition-colors disabled:opacity-30"
+                >
+                  <span className="material-symbols-outlined text-[14px]">translate</span>
+                  {translations[msg.id] ? "Untranslate" : "Translate"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <MainLayout hideFooter>
       <div className="flex flex-col h-[calc(100vh-4rem)]" data-page>
         {/* Header */}
-        <div className="flex items-center gap-4 px-4 py-3 border-b border-outline-variant/10 bg-surface-container-lowest/80 backdrop-blur-sm sticky top-16 z-10">
-          <button onClick={() => router.push("/chat")} className="p-2 rounded-full hover:bg-surface-container-high transition-all press-effect">
-            <span className="material-symbols-outlined">arrow_back</span>
+        <div className="flex items-center gap-3 px-3 py-2.5 border-b border-outline-variant/10 bg-surface-container-lowest/90 backdrop-blur-md sticky top-16 z-10">
+          <button
+            onClick={() => router.push("/chat")}
+            className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-surface-container-high transition-all press-effect"
+          >
+            <span className="material-symbols-outlined text-[22px] text-on-surface">arrow_back</span>
           </button>
-          <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center overflow-hidden">
-            <span className="material-symbols-outlined text-on-surface-variant">person</span>
+          <div className="relative">
+            <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center overflow-hidden">
+              {otherUser?.profile_photo ? (
+                <img src={otherUser.profile_photo} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="material-symbols-outlined text-on-surface-variant/60">person</span>
+              )}
+            </div>
+            {otherUser?.id && onlineUsers[otherUser.id] && (
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full border-2 border-surface-container-lowest" />
+            )}
           </div>
-          <div className="flex-1">
-            <h2 className="font-semibold text-on-surface">Conversation</h2>
-            <p className="text-xs text-on-surface-variant">
-              {typing.length > 0 ? `${typing.join(", ")} typing...` : connected ? "Online" : "Connecting..."}
+          <div className="flex-1 min-w-0">
+            <h2 className="font-semibold text-[15px] text-on-surface truncate">
+              {otherUser?.full_name || "Conversation"}
+            </h2>
+            <p className="text-[11px] text-on-surface-variant/60">
+              {typing.length > 0 ? (
+                <span className="text-primary font-medium">
+                  {typing.join(", ")} typing...
+                </span>
+              ) : "Online"}
             </p>
+          </div>
+          <div className="relative">
+            <button
+              onClick={() => setShowHeaderMenu(prev => !prev)}
+              className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-surface-container-high transition-all"
+            >
+              <span className="material-symbols-outlined text-[20px] text-on-surface-variant">more_vert</span>
+            </button>
+            {showHeaderMenu && (
+              <div className="absolute right-0 top-full mt-1 bg-surface-container-lowest rounded-xl shadow-xl border border-outline-variant/20 py-1 z-50 min-w-[160px]">
+                <button
+                  onClick={() => { if (otherUser?.id) router.push(`/user/${otherUser.id}`); setShowHeaderMenu(false); }}
+                  className="flex items-center gap-2 w-full px-4 py-2.5 text-[13px] text-on-surface hover:bg-surface-container-high transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[18px]">person</span>
+                  View Profile
+                </button>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(window.location.href); setShowHeaderMenu(false); }}
+                  className="flex items-center gap-2 w-full px-4 py-2.5 text-[13px] text-on-surface hover:bg-surface-container-high transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[18px]">link</span>
+                  Copy Link
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-3 custom-scrollbar">
+        {/* Messages area */}
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto px-3 py-4 custom-scrollbar bg-surface"
+        >
           {convMessages.length === 0 && (
-            <div className="text-center py-16">
-              <span className="material-symbols-outlined text-5xl text-on-surface-variant/20 mb-3 block">chat_bubble</span>
-              <p className="text-on-surface-variant">No messages yet. Say hello!</p>
+            <div className="flex flex-col items-center justify-center py-20">
+              <div className="w-16 h-16 rounded-full bg-surface-container-low flex items-center justify-center mb-4">
+                <span className="material-symbols-outlined text-[32px] text-on-surface-variant/25">waving_hand</span>
+              </div>
+              <p className="text-on-surface-variant/60 text-sm">No messages yet. Say hello!</p>
             </div>
           )}
-          {convMessages.map((msg) => {
-            const isOwn = msg.sender?.id === currentUserId || msg.sender?.user_id === currentUserId;
-            if (msg.is_deleted_for_everyone) {
-              return (
-                <div key={msg.id} className={`flex ${isOwn ? "justify-end" : "justify-start"}`}>
-                  <div className="px-4 py-2 rounded-2xl bg-surface-container-high/50 text-on-surface-variant/50 text-sm italic">Message deleted</div>
+
+          {groupedMessages.map((group, gi) => (
+            <div key={gi} className={`flex ${group.isOwn ? "justify-end" : "justify-start"} mb-3`}>
+              {/* Avatar for other user - only on first group or if gap */}
+              {!group.isOwn && (
+                <div className="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center flex-shrink-0 self-end mr-2 overflow-hidden">
+                  <span className="material-symbols-outlined text-on-surface-variant/50 text-[16px]">person</span>
                 </div>
-              );
-            }
-            return (
-              <div key={msg.id} className={`flex ${isOwn ? "justify-end" : "justify-start"} group`}>
-                <div className={`max-w-[75%] ${isOwn ? "order-2" : ""}`}>
-                  {/* Reply reference */}
-                  {msg.reply_to_id && (
-                    <div className="text-xs text-on-surface-variant/60 px-3 py-1 mb-1 border-l-2 border-primary/30 bg-primary/5 rounded-r-lg">
-                      Replying to message
-                    </div>
-                  )}
-                  <div className={`px-4 py-2.5 rounded-2xl ${isOwn ? "bg-primary text-on-primary rounded-br-md" : "bg-surface-container-low text-on-surface rounded-bl-md"}`}>
-                    {!isOwn && <p className="text-xs font-bold mb-1 opacity-70">{msg.sender?.full_name || msg.sender?.user_name || "User"}</p>}
+              )}
 
-                    {/* File attachment */}
-                    {msg.file && (
-                      <div className="mb-2">
-                        {msg.file.type === "IMAGE" ? (
-                          <img src={msg.file.url} alt={msg.file.name} className="max-w-full rounded-xl max-h-64 object-cover" />
-                        ) : (
-                          <a href={msg.file.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm underline">
-                            <span className="material-symbols-outlined text-sm">{msg.file.type === "VIDEO" ? "videocam" : "audio_file"}</span>
-                            {msg.file.name}
-                          </a>
-                        )}
-                      </div>
-                    )}
+              <div className={`flex flex-col ${group.isOwn ? "items-end" : "items-start"} max-w-[90%] min-w-0 overflow-hidden`}>
+                {/* Sender name for non-own messages */}
+                {!group.isOwn && (
+                  <p className="text-[11px] font-semibold text-on-surface-variant/60 mb-1 ml-1">
+                    {group.senderName}
+                  </p>
+                )}
 
-                    {/* Shared post */}
-                    {msg.shared_post && (
-                      <Link href={`/post/${msg.shared_post.post_id}`} className="block p-2 mb-2 rounded-lg bg-white/10 border border-white/20 text-xs">
-                        <p className="font-bold">{msg.shared_post.title || "Shared Post"}</p>
-                        <p className="opacity-70 line-clamp-2">{msg.shared_post.description}</p>
-                      </Link>
-                    )}
-
-                    {msg.text && <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>}
-
-                    <div className={`flex items-center gap-2 mt-1 ${isOwn ? "justify-end" : "justify-start"}`}>
-                      <span className={`text-[10px] ${isOwn ? "text-on-primary/60" : "text-on-surface-variant/50"}`}>{formatTime(msg.created_at)}</span>
-                      {msg.edited_at && <span className={`text-[10px] ${isOwn ? "text-on-primary/60" : "text-on-surface-variant/50"}`}>(edited)</span>}
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className={`flex gap-1 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${isOwn ? "justify-end" : "justify-start"}`}>
-                    <button onClick={() => setReplyTo(msg)} className="text-[10px] text-on-surface-variant hover:text-primary px-1.5 py-0.5 rounded">Reply</button>
-                    {isOwn && (
-                      <>
-                        <button onClick={() => handleEdit(msg)} className="text-[10px] text-on-surface-variant hover:text-primary px-1.5 py-0.5 rounded">Edit</button>
-                        <button onClick={() => { if (confirm("Delete this message?")) deleteMessage(msg.id); }} className="text-[10px] text-on-surface-variant hover:text-red-500 px-1.5 py-0.5 rounded">Delete</button>
-                      </>
-                    )}
-                  </div>
-                </div>
+                {/* Messages in group */}
+                {group.messages.map((msg, mi) => {
+                  const isFirst = mi === 0;
+                  const isLast = mi === group.messages.length - 1;
+                  return renderBubble(msg, group.isOwn, isFirst, isLast);
+                })}
               </div>
-            );
-          })}
+            </div>
+          ))}
 
           {/* Typing indicator */}
           {typing.length > 0 && (
-            <div className="flex justify-start">
-              <div className="px-4 py-2.5 rounded-2xl bg-surface-container-low rounded-bl-md">
-                <div className="flex gap-1">
-                  <span className="w-2 h-2 bg-on-surface-variant/40 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></span>
-                  <span className="w-2 h-2 bg-on-surface-variant/40 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></span>
-                  <span className="w-2 h-2 bg-on-surface-variant/40 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></span>
+            <div className="flex justify-start mb-3">
+              <div className="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center flex-shrink-0 self-end mr-2">
+                <span className="material-symbols-outlined text-on-surface-variant/50 text-[16px]">person</span>
+              </div>
+              <div className="bg-surface-container-low rounded-2xl rounded-bl-sm px-4 py-3">
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 bg-on-surface-variant/30 rounded-full animate-bounce" style={{ animationDelay: "0ms", animationDuration: "0.6s" }} />
+                  <span className="w-2 h-2 bg-on-surface-variant/30 rounded-full animate-bounce" style={{ animationDelay: "150ms", animationDuration: "0.6s" }} />
+                  <span className="w-2 h-2 bg-on-surface-variant/30 rounded-full animate-bounce" style={{ animationDelay: "300ms", animationDuration: "0.6s" }} />
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Edit bar */}
-        {editingId && (
-          <div className="px-4 py-2 bg-primary/10 border-t border-primary/20 flex items-center gap-3">
-            <span className="material-symbols-outlined text-primary text-sm">edit</span>
-            <input value={editText} onChange={(e) => setEditText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitEdit()} className="flex-1 bg-transparent text-sm text-on-surface focus:outline-none" autoFocus />
-            <button onClick={submitEdit} className="text-primary font-bold text-xs">Save</button>
-            <button onClick={() => setEditingId(null)} className="text-on-surface-variant text-xs">Cancel</button>
+        {/* Input area */}
+        <div className="px-3 py-2.5 border-t border-outline-variant/8 bg-surface-container-lowest">
+          {/* Sticker picker */}
+          <div className="relative">
+            {stickerOpen && (
+              <div className="absolute bottom-full left-0 right-0 mb-2">
+                <StickerPicker onSelect={handleStickerSelect} onClose={() => setStickerOpen(false)} />
+              </div>
+            )}
           </div>
-        )}
 
-        {/* Reply bar */}
-        {replyTo && (
-          <div className="px-4 py-2 bg-surface-container-low border-t border-outline-variant/10 flex items-center gap-3">
-            <span className="material-symbols-outlined text-primary text-sm">reply</span>
-            <p className="flex-1 text-xs text-on-surface-variant truncate">Replying to: {replyTo.text || "message"}</p>
-            <button onClick={() => setReplyTo(null)} className="text-on-surface-variant hover:text-on-surface"><span className="material-symbols-outlined text-sm">close</span></button>
-          </div>
-        )}
-
-        {/* Input */}
-        <div className="px-4 py-3 border-t border-outline-variant/10 bg-surface-container-lowest">
-          <div className="flex items-end gap-2">
-            <button onClick={() => fileRef.current?.click()} disabled={uploading} className="p-2.5 rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-all disabled:opacity-50">
-              <span className="material-symbols-outlined">{uploading ? "hourglass_empty" : "attach_file"}</span>
+          <div className="flex items-end gap-1.5">
+            {/* Sticker button */}
+            <button
+              onClick={() => setStickerOpen(prev => !prev)}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${stickerOpen ? "bg-primary/10 text-primary" : "text-on-surface-variant/50 hover:text-on-surface-variant hover:bg-surface-container-high"}`}
+            >
+              <span className="material-symbols-outlined text-[22px]">sentiment_satisfied</span>
             </button>
-            <input type="file" ref={fileRef} onChange={handleFileUpload} className="hidden" accept="image/*,video/*,audio/*" />
-            <div className="flex-1 relative">
+
+            {/* Text input */}
+            <div className="flex-1 bg-surface-container-low rounded-2xl px-3.5 py-0.5 flex items-end">
               <textarea
+                ref={textareaRef}
                 value={text}
-                onChange={(e) => { setText(e.target.value); handleTyping(); }}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  // /sticker slash command
+                  if (val.match(/^\/sticker[\s]?$/i)) {
+                    setText("");
+                    setStickerOpen(true);
+                    return;
+                  }
+                  setText(val);
+                  handleTyping();
+                }}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                placeholder="Type a message..."
+                placeholder="Message..."
                 rows={1}
-                className="w-full bg-surface-container-high rounded-2xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:ring-1 focus:ring-primary/30 resize-none max-h-32"
+                className="flex-1 bg-transparent text-[14px] text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none resize-none py-2 leading-snug"
+                style={{ maxHeight: "120px" }}
               />
             </div>
-            <button onClick={handleSend} disabled={!text.trim()} className="w-10 h-10 shrink-0 flex items-center justify-center rounded-full bg-primary text-on-primary hover:opacity-90 transition-all disabled:opacity-30 press-effect">
+
+            {/* Send button */}
+            <button
+              onClick={handleSend}
+              disabled={!text.trim()}
+              className="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center hover:opacity-90 transition-all disabled:opacity-25 press-effect flex-shrink-0"
+            >
               <span className="material-symbols-outlined text-[20px]">send</span>
             </button>
           </div>

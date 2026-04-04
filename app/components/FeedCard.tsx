@@ -145,7 +145,8 @@ export default function FeedCard({
 
   function handleStickerSelect(stickerId: string) {
     setShowStickerPicker(false);
-    setNewComment(`[sticker:${stickerId}]`);
+    const numId = stickerId.startsWith("gif_") ? stickerId.replace("gif_", "") : stickerId;
+    setNewComment(`[sticker:${numId}]`);
     // Auto-submit the sticker as a comment
     (async () => {
       setPostingComment(true);
@@ -153,7 +154,7 @@ export default function FeedCard({
         const endpoint = post.type === "post"
           ? `/social/posts/${post.id}/comments/`
           : `/social/prayers/${post.id}/comments/`;
-        await fetchAPI(endpoint, { method: "POST", body: JSON.stringify({ text: `[sticker:${stickerId}]` }) });
+        await fetchAPI(endpoint, { method: "POST", body: JSON.stringify({ text: `[sticker:${numId}]` }) });
         setNewComment("");
         setCommentCount((c) => c + 1);
         await loadComments();
@@ -179,6 +180,26 @@ export default function FeedCard({
       }
     }
     return <>{text}</>;
+  }
+
+  function renderPostContent(text: string, type: string) {
+    const stickerMatch = text.match(/^\[sticker:(\w+)\]$/);
+    if (stickerMatch) {
+      const stickerId = stickerMatch[1];
+      const gifMatch = stickerId.match(/^gif_(\d+)$/);
+      if (gifMatch) {
+        return (
+          <div className="flex justify-center mb-6">
+            <img src={`/stickers/sticker_${gifMatch[1]}.gif`} alt="Sticker" className="w-32 h-32 object-contain" />
+          </div>
+        );
+      }
+      const sticker = STICKERS.find((s) => s.id === stickerId);
+      if (sticker) {
+        return <p className="text-6xl text-center mb-6">{sticker.emoji}</p>;
+      }
+    }
+    return <p className={`text-on-surface leading-relaxed mb-6 ${type === "prayer" ? "italic text-xl" : "text-lg"}`}>{text}</p>;
   }
 
   const userReactionEmoji = post.userReaction ? REACTIONS.find((r) => r.type === post.userReaction)?.emoji : null;
@@ -234,7 +255,7 @@ export default function FeedCard({
 
       <Link href={`/${post.type === "prayer" ? "prayer" : "post"}/${post.id}`} className="block group/link">
         {post.title && <h3 className="text-2xl font-headline mb-3 group-hover/link:text-primary transition-colors">{post.title}</h3>}
-        <p className={`text-on-surface leading-relaxed mb-6 ${post.type === "prayer" ? "italic text-xl" : "text-lg"}`}>{post.content}</p>
+        {renderPostContent(post.content, post.type)}
       </Link>
 
       {post.image && (

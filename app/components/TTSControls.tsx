@@ -118,8 +118,8 @@ export default function TTSControls({ content, chapterId }: TTSControlsProps) {
     <div
       className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${
         isPlaying && !isPaused
-          ? "bg-primary/10 border-primary/30 shadow-sm"
-          : "bg-surface-container-lowest border-outline-variant/20"
+          ? "bg-primary-container/20 border-primary-container/40 shadow-sm"
+          : "bg-surface-container-low border-outline-variant/20"
       }`}
     >
       {/* Play/Pause */}
@@ -129,7 +129,7 @@ export default function TTSControls({ content, chapterId }: TTSControlsProps) {
         className={`flex items-center justify-center w-10 h-10 rounded-full transition-all ${
           isPlaying && !isPaused
             ? "bg-primary text-on-primary shadow-md"
-            : "bg-primary/10 text-primary hover:bg-primary/20"
+            : "bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest hover:text-on-surface"
         } disabled:opacity-40 disabled:cursor-not-allowed`}
         aria-label={isPlaying && !isPaused ? "Pause" : "Play"}
       >
@@ -142,14 +142,14 @@ export default function TTSControls({ content, chapterId }: TTSControlsProps) {
       <button
         onClick={stopPlayback}
         disabled={!isPlaying && !isPaused}
-        className="flex items-center justify-center w-10 h-10 rounded-full bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container-high transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+        className="flex items-center justify-center w-10 h-10 rounded-full bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest transition-all disabled:opacity-30 disabled:cursor-not-allowed"
         aria-label="Stop"
       >
         <span className="material-symbols-outlined text-xl">stop</span>
       </button>
 
       {/* Divider */}
-      <div className="w-px h-6 bg-outline-variant/20" />
+      <div className="w-px h-6 bg-outline-variant/30" />
 
       {/* Speed selector */}
       <div className="flex items-center gap-1">
@@ -158,9 +158,9 @@ export default function TTSControls({ content, chapterId }: TTSControlsProps) {
           <button
             key={s}
             onClick={() => handleSpeedChange(s)}
-            className={`px-2 py-1 rounded-md text-xs font-semibold transition-all ${
+            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
               speed === s
-                ? "bg-primary text-on-primary"
+                ? "bg-primary-container text-on-primary-container"
                 : "text-on-surface-variant hover:bg-surface-container-high"
             }`}
           >

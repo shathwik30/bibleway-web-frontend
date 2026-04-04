@@ -26,7 +26,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     // Don't attempt WebSocket if we've failed too many times (backend likely has no WS support)
     if (reconnectAttempts.current >= 3) return;
 
-    const baseUrl = (process.env.NEXT_PUBLIC_WS_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000")
+    const baseUrl = (process.env.NEXT_PUBLIC_WS_URL || process.env.NEXT_PUBLIC_API_URL || "https://api-bibleway.up.railway.app")
       .replace(/^http/, "ws")
       .replace(/\/api\/v1$/, "");
 

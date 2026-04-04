@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { fetchAPI } from "../lib/api";
 import ImageCropper from "./ImageCropper";
+import StickerPicker from "./StickerPicker";
 
 interface PostingModalProps {
   activeTab: "post" | "prayer";
@@ -30,6 +31,8 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
   const [croppedFiles, setCroppedFiles] = useState<File[]>([]);
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const [mounted, setMounted] = useState(false);
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
+  const [selectedSticker, setSelectedSticker] = useState<string | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -120,14 +123,36 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
     setMediaTypes((prev) => prev.filter((_, i) => i !== index));
   }
 
+  function handleStickerSelect(stickerId: string) {
+    setSelectedSticker(stickerId);
+    setShowStickerPicker(false);
+  }
+
+  function clearSticker() {
+    setSelectedSticker(null);
+  }
+
+  function getStickerPreview(stickerId: string) {
+    const gifMatch = stickerId.match(/^gif_(\d+)$/);
+    if (gifMatch) {
+      return <img src={`/stickers/sticker_${gifMatch[1]}.gif`} alt="Sticker" className="w-20 h-20 object-contain" />;
+    }
+    return <span className="text-5xl">{stickerId}</span>;
+  }
+
   async function handleCreatePost() {
-    if (!postContent.trim() || posting) return;
+    const hasText = postContent.trim().length > 0;
+    const hasSticker = !!selectedSticker;
+    const hasMedia = mediaKeys.length > 0;
+    if ((!hasText && !hasSticker && !hasMedia) || posting) return;
     setPosting(true);
     try {
       const endpoint = activeTab === "post" ? "/social/posts/" : "/social/prayers/";
+      const numId = selectedSticker?.startsWith("gif_") ? selectedSticker.replace("gif_", "") : selectedSticker;
+      const textValue = hasSticker && !hasText ? `[sticker:${numId}]` : postContent;
       const body: Record<string, unknown> = activeTab === "post"
-        ? { text_content: postContent }
-        : { title: postTitle || "Prayer Request", description: postContent };
+        ? { text_content: textValue }
+        : { title: postTitle || "Prayer Request", description: textValue };
       if (mediaKeys.length > 0) {
         body.media_keys = mediaKeys;
         body.media_types = mediaTypes;
@@ -228,9 +253,18 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
             />
           )}
 
+          {selectedSticker && (
+            <div className="flex items-center gap-3 p-3 bg-surface-container-low rounded-xl">
+              {getStickerPreview(selectedSticker)}
+              <button onClick={clearSticker} className="w-6 h-6 bg-black/10 rounded-full flex items-center justify-center hover:bg-black/20 transition-colors">
+                <span className="material-symbols-outlined text-xs">close</span>
+              </button>
+            </div>
+          )}
+
           <textarea
             rows={6}
-            placeholder={activeTab === "post" ? "What's on your heart today?" : "Describe your prayer request..."}
+            placeholder={selectedSticker ? "Add a caption (optional)..." : activeTab === "post" ? "What's on your heart today?" : "Describe your prayer request..."}
             value={postContent}
             onChange={(e) => { setPostContent(e.target.value); localStorage.setItem("draft_content", e.target.value); }}
             className="w-full bg-transparent p-0 focus:outline-none resize-none text-lg font-body leading-relaxed placeholder:text-on-surface-variant/20 text-on-surface no-scrollbar min-h-[160px]"
@@ -245,10 +279,19 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
               {uploadingMedia ? "Uploading..." : mediaKeys.length > 0 ? `Media (${mediaKeys.length}/10)` : "Media"}
             </button>
             <input type="file" ref={mediaInputRef} onChange={handleMediaSelect} className="hidden" accept="image/*,video/*" multiple />
+            <div className="relative">
+              <button onClick={() => setShowStickerPicker(!showStickerPicker)} className="flex items-center gap-2 text-on-surface-variant font-bold text-xs uppercase tracking-widest py-2.5 px-4 rounded-full hover:bg-surface-container-high transition-all">
+                <span className="material-symbols-outlined text-lg">sentiment_satisfied</span>
+                Sticker
+              </button>
+              {showStickerPicker && (
+                <StickerPicker onSelect={handleStickerSelect} onClose={() => setShowStickerPicker(false)} />
+              )}
+            </div>
           </div>
           <button
             onClick={handleCreatePost}
-            disabled={!postContent.trim() || posting}
+            disabled={(!postContent.trim() && !selectedSticker && mediaKeys.length === 0) || posting}
             className="bg-primary text-on-primary px-8 py-3 rounded-full font-bold uppercase tracking-widest text-[11px] disabled:opacity-30 shadow-lg shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all"
           >
             {posting ? "Publishing..." : activeTab === "post" ? "Publish" : "Submit"}

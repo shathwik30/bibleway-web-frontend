@@ -41,7 +41,7 @@ const GAMES = [
 export default function GamesPage() {
   return (
     <MainLayout>
-      <div className="max-w-3xl mx-auto px-6 py-12">
+      <div className="max-w-7xl mx-auto px-6 py-12">
         <h1 className="text-4xl font-headline text-on-surface mb-2">Games</h1>
         <p className="text-on-surface-variant mb-8">Rejoice and have fun with these Bible-themed games</p>
 

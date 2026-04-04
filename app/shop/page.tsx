@@ -71,7 +71,7 @@ export default function ShopPage() {
         <section className="mb-16">
           <div className="flex flex-col md:flex-row justify-between items-end gap-6">
             <div className="max-w-2xl">
-              <div className="inline-block px-4 py-1.5 mb-6 rounded-full bg-tertiary-fixed/20 text-on-tertiary-fixed-variant font-label text-[11px] font-bold uppercase tracking-widest">
+              <div className="inline-block px-4 py-1.5 mb-6 rounded-full bg-primary-container text-on-primary-container font-label text-[11px] font-bold uppercase tracking-widest">
                 The Curated Collection
               </div>
               <h1 className="text-5xl md:text-7xl font-headline text-on-surface leading-tight mb-6">
@@ -81,10 +81,16 @@ export default function ShopPage() {
                 Deepen your faith with premium study guides and atmospheric
                 media designed for focused reflection.
               </p>
-              <Link href="/shop/purchases" className="inline-flex items-center gap-2 mt-4 text-primary font-bold text-sm hover:underline">
-                <span className="material-symbols-outlined text-lg">shopping_bag</span>
-                My Purchases
-              </Link>
+              <div className="flex items-center gap-6 mt-4">
+                <Link href="/shop/purchases" className="inline-flex items-center gap-2 text-primary font-bold text-sm hover:underline">
+                  <span className="material-symbols-outlined text-lg">shopping_bag</span>
+                  My Purchases
+                </Link>
+                <Link href="/shop/downloads" className="inline-flex items-center gap-2 text-primary font-bold text-sm hover:underline">
+                  <span className="material-symbols-outlined text-lg">download</span>
+                  My Downloads
+                </Link>
+              </div>
             </div>
           </div>
 

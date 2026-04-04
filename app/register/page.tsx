@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { fetchAPI } from "../lib/api";
+import GoogleSignInButton from "../components/GoogleSignInButton";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -226,6 +227,8 @@ export default function RegisterPage() {
             {loading ? "Creating..." : "Create Account"}
           </button>
         </form>
+
+        <GoogleSignInButton />
 
         <p className="mt-8 text-sm text-on-surface-variant text-center">
           Already have an account?{" "}

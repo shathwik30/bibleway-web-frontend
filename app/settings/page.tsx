@@ -48,6 +48,7 @@ export default function SettingsPage() {
       const lang = d?.preferred_language || "en";
       setLanguage(lang);
       if (lang !== locale) setLocale(lang);
+      if (typeof window !== "undefined") localStorage.setItem("preferred_language", lang);
       setPrivacy({ account_visibility: d?.account_visibility || "public", hide_followers_list: d?.hide_followers_list || false });
     }).catch(() => {});
   }, []);
@@ -84,6 +85,7 @@ export default function SettingsPage() {
     try {
       await fetchAPI("/accounts/profile/", { method: "PATCH", body: JSON.stringify({ preferred_language: language }) });
       setLocale(language);
+      if (typeof window !== "undefined") localStorage.setItem("preferred_language", language);
     } catch {} finally { setSavingLang(false); }
   }
 
@@ -92,8 +94,8 @@ export default function SettingsPage() {
     try { await fetchAPI("/accounts/privacy/", { method: "PUT", body: JSON.stringify(privacy) }); } catch {} finally { setSavingPrivacy(false); }
   }
 
-  async function handleUnblock(userId: string) {
-    try { await fetchAPI(`/accounts/users/${userId}/block/`, { method: "DELETE" }); setBlockedUsers((p) => p.filter((u) => u.id !== userId)); } catch {}
+  async function handleUnblock(userId: string, relationId: string) {
+    try { await fetchAPI(`/accounts/users/${userId}/block/`, { method: "DELETE" }); setBlockedUsers((p) => p.filter((u) => u.id !== relationId)); } catch {}
   }
 
   async function handleFollowRequest(id: string, action: "accept" | "reject") {
@@ -185,7 +187,16 @@ export default function SettingsPage() {
 
           {/* Language */}
           <div>
-            <SettingsRow icon="language" label={t("settings.language")} panel="language" />
+            <button onClick={() => togglePanel("language")} className="w-full flex items-center justify-between px-6 py-4 hover:bg-surface-container-low transition-all group text-left">
+              <div className="flex items-center gap-4">
+                <span className="material-symbols-outlined text-on-surface-variant group-hover:text-primary transition-colors">language</span>
+                <div>
+                  <span className="font-medium text-on-surface">{t("settings.language")}</span>
+                  <p className="text-xs text-on-surface-variant">{LANGUAGES.find((l) => l.code === language)?.name || language}</p>
+                </div>
+              </div>
+              <span className={`material-symbols-outlined text-on-surface-variant/40 text-sm transition-transform duration-200 ${activePanel === "language" ? "rotate-90" : ""}`}>chevron_right</span>
+            </button>
             <Panel panel="language">
               <div className="space-y-2">
                 {LANGUAGES.map((l) => (
@@ -222,15 +233,22 @@ export default function SettingsPage() {
             <SettingsRow icon="block" label={t("settings.blockedUsers")} panel="blocked" />
             <Panel panel="blocked">
               {loadingBlocked ? <Spinner /> : blockedUsers.length > 0 ? (
-                <div className="space-y-2">{blockedUsers.map((u) => (
-                  <div key={u.id} className="flex items-center justify-between py-2 px-3 rounded-xl hover:bg-surface-container-high transition-all">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center"><span className="material-symbols-outlined text-sm text-on-surface-variant">person</span></div>
-                      <span className="text-sm font-medium text-on-surface">{u.full_name || "User"}</span>
+                <div className="space-y-2">{blockedUsers.map((u) => {
+                  const user = u.blocked || u;
+                  return (
+                    <div key={u.id} className="flex items-center justify-between py-2 px-3 rounded-xl hover:bg-surface-container-high transition-all">
+                      <div className="flex items-center gap-3">
+                        {user.profile_photo ? (
+                          <img src={user.profile_photo} alt="" className="w-8 h-8 rounded-full object-cover" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center"><span className="material-symbols-outlined text-sm text-on-surface-variant">person</span></div>
+                        )}
+                        <span className="text-sm font-medium text-on-surface">{user.full_name || "User"}</span>
+                      </div>
+                      <button onClick={() => handleUnblock(user.id, u.id)} className="text-xs text-red-600 font-bold hover:underline press-effect">Unblock</button>
                     </div>
-                    <button onClick={() => handleUnblock(u.id)} className="text-xs text-red-600 font-bold hover:underline press-effect">Unblock</button>
-                  </div>
-                ))}</div>
+                  );
+                })}</div>
               ) : <p className="text-sm text-on-surface-variant py-3 text-center">No blocked users</p>}
             </Panel>
           </div>
