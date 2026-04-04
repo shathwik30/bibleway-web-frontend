@@ -39,22 +39,12 @@ export default function ChatConversationPage() {
   const currentConv = conversations.find(c => c.id === convId);
   const otherUser = currentConv?.other_user;
 
-  const msgPollRef = useRef<ReturnType<typeof setInterval>>(undefined);
-
   useEffect(() => {
     if (convId) {
       loadMessages(convId);
       markRead(convId);
       getPresence(convId);
-
-      // Poll messages every 5 seconds as fallback when WS is unavailable
-      msgPollRef.current = setInterval(() => {
-        loadMessages(convId);
-      }, 5000);
     }
-    return () => {
-      clearInterval(msgPollRef.current);
-    };
   }, [convId, loadMessages, markRead, getPresence]);
 
   useEffect(() => {
