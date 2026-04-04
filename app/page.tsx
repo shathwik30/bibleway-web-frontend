@@ -12,6 +12,7 @@ import RecommendedPeople from "./components/RecommendedPeople";
 import { useTranslation } from "./lib/i18n";
 import VerseOnboarding from "./components/VerseOnboarding";
 import VerseShareDropdown from "./components/VerseShareCard";
+import { useToast } from "./components/Toast";
 
 const BACKGROUNDS = [
   "mountain-bg.png",
@@ -44,6 +45,8 @@ export default function HomePage() {
   const [reportReason, setReportReason] = useState("");
   const [reportCategory, setReportCategory] = useState("inappropriate");
   const [reportSubmitting, setReportSubmitting] = useState(false);
+
+  const { showToast: showSystemToast } = useToast();
 
   // Reaction debounce - prevent rapid-fire clicks
   const reactingPosts = useRef<Set<string>>(new Set());
@@ -110,6 +113,7 @@ export default function HomePage() {
         title: p.title,
         content: type === "post" ? p.text_content : p.description,
         image: p.media?.[0]?.file,
+        media: p.media || [],
         likes: p.reaction_count ?? 0,
         prayers: type === "prayer" ? (p.reaction_count ?? 0) : undefined,
         comments: p.comment_count ?? 0,
@@ -226,7 +230,7 @@ export default function HomePage() {
       if (currentPost) {
         setFeedPosts(prev => prev.map(p => p.id !== postId ? p : { ...p, [countKey]: currentPost[countKey], userReaction: currentPost.userReaction }));
       }
-      if ((err as Error)?.message?.includes("token")) alert("Session expired. Please log in again.");
+      if ((err as Error)?.message?.includes("token")) showSystemToast("error", "Session Expired", "Session expired. Please log in again.");
     } finally {
       reactingPosts.current.delete(postId);
     }
@@ -314,6 +318,7 @@ export default function HomePage() {
         title: p.title,
         content: type === "post" ? p.text_content : p.description,
         image: p.media?.[0]?.file,
+        media: p.media || [],
         likes: p.reaction_count ?? 0,
         prayers: type === "prayer" ? (p.reaction_count ?? 0) : undefined,
         comments: p.comment_count ?? 0,
@@ -399,10 +404,10 @@ export default function HomePage() {
         .reaction-animate { animation: reactionPop 0.7s ease-out forwards; position: absolute; font-size: 2rem; pointer-events: none; z-index: 50; }
       `}</style>
 
-      <div className="max-w-7xl mx-auto px-6 py-8 flex flex-col xl:flex-row gap-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 flex flex-col xl:flex-row gap-8 xl:gap-12">
         <section className="flex-1 space-y-12">
           {/* Verse Header */}
-          <div className="relative overflow-hidden rounded-xl bg-primary-container text-white p-8 md:p-12 editorial-shadow min-h-[300px] flex items-center" style={{ backgroundImage: `url('/${currentBg}')`, backgroundSize: "cover", backgroundPosition: "center" }}>
+          <div className="relative overflow-hidden rounded-xl bg-primary-container text-white p-5 sm:p-8 md:p-12 editorial-shadow min-h-[220px] sm:min-h-[300px] flex items-center" style={{ backgroundImage: `url('/${currentBg}')`, backgroundSize: "cover", backgroundPosition: "center" }}>
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
             <div className="relative z-10 w-full">
               <div className="flex items-center justify-between mb-4">
@@ -420,7 +425,7 @@ export default function HomePage() {
                 </>
               ) : verseData ? (
                 <>
-                  <blockquote className="text-4xl md:text-5xl font-headline leading-tight mb-4 max-w-3xl">{verseData.text}</blockquote>
+                  <blockquote className="text-2xl sm:text-4xl md:text-5xl font-headline leading-tight mb-4 max-w-3xl">{verseData.text}</blockquote>
                   <cite className="text-base text-white/80 font-body">{verseData.reference}</cite>
                   {/* Share + Replay buttons */}
                   <div className="flex items-center gap-3 mt-6">
@@ -459,15 +464,15 @@ export default function HomePage() {
           </div>
 
           {/* Feed Tabs */}
-          <div className="flex items-center justify-between">
-            <div className="flex space-x-10">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex space-x-6 sm:space-x-10">
               <button onClick={() => setActiveTab("post")} className={`pb-2 border-b-2 transition-all font-medium tracking-wide ${activeTab === "post" ? "border-primary text-primary" : "border-transparent text-on-surface-variant hover:text-primary"}`}>{t("feed.posts")}</button>
               <button onClick={() => setActiveTab("prayer")} className={`pb-2 border-b-2 transition-all font-medium tracking-wide ${activeTab === "prayer" ? "border-primary text-primary" : "border-transparent text-on-surface-variant hover:text-primary"}`}>{t("feed.prayers")}</button>
             </div>
             {isLoggedIn && (
-              <button onClick={() => setShowPostingModal(true)} className="bg-primary text-on-primary px-6 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 hover:opacity-90 transition-all shadow-lg shadow-primary/20">
+              <button onClick={() => setShowPostingModal(true)} className="bg-primary text-on-primary px-4 sm:px-6 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 hover:opacity-90 transition-all shadow-lg shadow-primary/20 shrink-0">
                 <span className="material-symbols-outlined text-lg">add</span>
-                {activeTab === "post" ? t("feed.createPost") : t("feed.createPrayer")}
+                <span className="hidden sm:inline">{activeTab === "post" ? t("feed.createPost") : t("feed.createPrayer")}</span>
               </button>
             )}
           </div>

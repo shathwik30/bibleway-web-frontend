@@ -38,6 +38,19 @@ export default function Sidebar({ collapsed }: SidebarProps) {
   const langRef = useRef<HTMLDivElement>(null);
   const themeRef = useRef<HTMLDivElement>(null);
 
+  // On tablet (md to lg), always render as collapsed regardless of prop
+  const [isTablet, setIsTablet] = useState(false);
+  useEffect(() => {
+    function check() {
+      const w = window.innerWidth;
+      setIsTablet(w >= 768 && w < 1024);
+    }
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  const isCollapsed = collapsed || isTablet;
+
   const themeIcon = theme === "system" ? "brightness_auto" : resolvedTheme === "dark" ? "dark_mode" : "light_mode";
   const themeLabel = theme === "system" ? "System" : resolvedTheme === "dark" ? "Dark" : "Light";
 
@@ -61,13 +74,13 @@ export default function Sidebar({ collapsed }: SidebarProps) {
   return (
     <>
       <aside
-        className={`hidden lg:flex flex-col fixed left-0 top-16 h-[calc(100vh-4rem)] pt-6 pb-8 bg-surface-container z-40 overflow-y-auto overflow-x-hidden transition-all duration-300 ease-in-out border-r border-outline-variant/10 ${
-          collapsed ? "w-[72px]" : "w-64"
+        className={`hidden md:flex flex-col fixed left-0 top-16 h-[calc(100vh-4rem)] pt-6 pb-8 bg-surface-container z-40 overflow-y-auto overflow-x-hidden transition-all duration-300 ease-in-out border-r border-outline-variant/10 ${
+          isCollapsed ? "w-[72px]" : "lg:w-64 w-[72px]"
         }`}
       >
-        <div className={`mb-8 transition-all duration-300 ${collapsed ? "px-2" : "px-6"}`}>
-          {!collapsed && (
-            <h3 className="text-xs font-label uppercase tracking-[0.2em] text-on-surface-variant/60 mb-6 transition-opacity duration-200">
+        <div className={`mb-8 transition-all duration-300 ${isCollapsed ? "px-2" : "px-6"}`}>
+          {!isCollapsed && (
+            <h3 className="hidden lg:block text-xs font-label uppercase tracking-[0.2em] text-on-surface-variant/60 mb-6 transition-opacity duration-200">
               Navigation
             </h3>
           )}
@@ -78,13 +91,13 @@ export default function Sidebar({ collapsed }: SidebarProps) {
                 <Link
                   key={link.href}
                   href={link.href}
-                  title={collapsed ? link.label : undefined}
+                  title={isCollapsed ? link.label : undefined}
                   className={`flex items-center gap-4 py-2.5 transition-all duration-200 rounded-xl ${
                     isActive
-                      ? collapsed
+                      ? isCollapsed
                         ? "text-primary font-bold bg-primary/10 justify-center px-2"
                         : "text-primary font-bold border-l-4 border-tertiary-fixed-dim pl-4 bg-surface-container-high/50"
-                      : collapsed
+                      : isCollapsed
                         ? "text-on-surface-variant hover:bg-surface-container-high justify-center px-2"
                         : "text-on-surface-variant pl-5 hover:bg-surface-container-high"
                   } ${link.isComingSoon ? "opacity-50 cursor-not-allowed" : ""}`}
@@ -96,8 +109,8 @@ export default function Sidebar({ collapsed }: SidebarProps) {
                       <span className="absolute -top-1 -right-1 w-2 h-2 bg-tertiary rounded-full"></span>
                     )}
                   </div>
-                  {!collapsed && (
-                    <span className="font-headline text-lg whitespace-nowrap overflow-hidden">
+                  {!isCollapsed && (
+                    <span className="hidden lg:inline font-headline text-lg whitespace-nowrap overflow-hidden">
                       {link.label}
                       {link.isComingSoon && <span className="ml-2 text-[8px] font-label uppercase tracking-widest opacity-60">Soon</span>}
                     </span>
@@ -109,22 +122,22 @@ export default function Sidebar({ collapsed }: SidebarProps) {
         </div>
 
         {/* Bottom Section */}
-        <div className={`mt-auto space-y-1 transition-all duration-300 ${collapsed ? "px-2" : "px-6"}`}>
+        <div className={`mt-auto space-y-1 transition-all duration-300 ${isCollapsed ? "px-2" : "px-6"}`}>
           {/* Language Selector */}
           <div className="relative" ref={langRef}>
             <button
               onClick={() => setLangOpen(!langOpen)}
-              title={collapsed ? `Language: ${currentLang.label}` : undefined}
+              title={isCollapsed ? `Language: ${currentLang.label}` : undefined}
               className={`flex items-center gap-4 text-on-surface-variant hover:text-primary transition-colors duration-200 py-3 rounded-xl w-full ${
-                collapsed ? "justify-center px-2" : "pl-5"
+                isCollapsed ? "justify-center px-2" : "pl-5"
               }`}
             >
               <span className="text-lg shrink-0">{currentLang.flag}</span>
-              {!collapsed && <span className="text-sm font-medium">{currentLang.label}</span>}
+              {!isCollapsed && <span className="hidden lg:inline text-sm font-medium">{currentLang.label}</span>}
             </button>
             {langOpen && (
               <div className={`absolute bottom-full mb-2 bg-surface-container-lowest rounded-xl shadow-xl border border-outline-variant/20 z-50 overflow-hidden ${
-                collapsed ? "left-full ml-2 w-44" : "left-0 right-0"
+                isCollapsed ? "left-full ml-2 w-44" : "left-0 right-0"
               }`}>
                 {LANGUAGES.map((lang) => (
                   <button
@@ -149,17 +162,17 @@ export default function Sidebar({ collapsed }: SidebarProps) {
           <div className="relative" ref={themeRef}>
             <button
               onClick={() => setThemeOpen(!themeOpen)}
-              title={collapsed ? `Theme: ${themeLabel}` : undefined}
+              title={isCollapsed ? `Theme: ${themeLabel}` : undefined}
               className={`flex items-center gap-4 text-on-surface-variant hover:text-primary transition-colors duration-200 py-3 rounded-xl w-full ${
-                collapsed ? "justify-center px-2" : "pl-5"
+                isCollapsed ? "justify-center px-2" : "pl-5"
               }`}
             >
               <span className="material-symbols-outlined shrink-0">{themeIcon}</span>
-              {!collapsed && <span className="text-sm font-medium">{themeLabel}</span>}
+              {!isCollapsed && <span className="hidden lg:inline text-sm font-medium">{themeLabel}</span>}
             </button>
             {themeOpen && (
               <div className={`absolute bottom-full mb-2 bg-surface-container-lowest rounded-xl shadow-xl border border-outline-variant/20 z-50 overflow-hidden ${
-                collapsed ? "left-full ml-2 w-40" : "left-0 right-0"
+                isCollapsed ? "left-full ml-2 w-40" : "left-0 right-0"
               }`}>
                 {([
                   { value: "light" as const, icon: "light_mode", label: "Light" },
@@ -187,21 +200,21 @@ export default function Sidebar({ collapsed }: SidebarProps) {
           {/* Settings */}
           <Link
             href="/settings"
-            title={collapsed ? "Settings" : undefined}
+            title={isCollapsed ? "Settings" : undefined}
             className={`flex items-center gap-4 text-on-surface-variant hover:text-primary transition-colors duration-200 py-3 rounded-xl ${
-              collapsed ? "justify-center px-2" : "pl-5"
+              isCollapsed ? "justify-center px-2" : "pl-5"
             }`}
           >
             <span className="material-symbols-outlined shrink-0">settings</span>
-            {!collapsed && <span className="text-sm font-medium">Settings</span>}
+            {!isCollapsed && <span className="hidden lg:inline text-sm font-medium">Settings</span>}
           </Link>
         </div>
       </aside>
 
       {/* Spacer to push main content */}
       <div
-        className={`hidden lg:block shrink-0 transition-all duration-300 ease-in-out ${
-          collapsed ? "w-[72px]" : "w-64"
+        className={`hidden md:block shrink-0 transition-all duration-300 ease-in-out ${
+          isCollapsed ? "w-[72px]" : "lg:w-64 w-[72px]"
         }`}
       />
     </>

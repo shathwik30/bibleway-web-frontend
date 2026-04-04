@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import { useWebSocket } from "./useWebSocket";
 import { fetchAPI } from "./api";
+import { useToast } from "../components/Toast";
 
 /**
  * Conversation shape from the backend ConversationListSerializer.
@@ -72,30 +73,67 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [onlineUsers, setOnlineUsers] = useState<Record<string, boolean>>({});
   const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const pollInterval = useRef<ReturnType<typeof setInterval>>(undefined);
+  const prevUnreadRef = useRef<number>(0);
+  const { showToast } = useToast();
 
-  // WS message handler -- still useful if WS connects, but chat works without it
+  // WS message handler — real-time updates when connected
   const handleWsMessage = useCallback((data: any) => {
+    const currentUid = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
+
     switch (data.type) {
       case "message.sent": {
         const msg = data.data;
         const convId = msg.conversation_id;
         if (!convId) break;
-        setMessages(prev => ({
-          ...prev,
-          [convId]: [...(prev[convId] || []), {
-            id: msg.message_id || msg.id,
-            sender: { id: msg.sender_id, full_name: msg.sender_name, profile_photo: null },
-            text: msg.text,
-            is_read: false,
-            created_at: msg.created_at,
-          }]
-        }));
+        const msgId = msg.message_id || msg.id;
+        const isMine = msg.sender_id === currentUid;
+
+        // Deduplicate — don't add if already in state (from REST send or polling)
+        setMessages(prev => {
+          const existing = prev[convId] || [];
+          if (existing.some(m => m.id === msgId)) return prev;
+          return {
+            ...prev,
+            [convId]: [...existing, {
+              id: msgId,
+              sender: { id: msg.sender_id, full_name: msg.sender_name, profile_photo: msg.sender_photo || null },
+              text: msg.text,
+              is_read: msg.is_read ?? false,
+              created_at: msg.created_at,
+            }]
+          };
+        });
+
         // Update conversation list
         setConversations(prev => prev.map(c =>
           c.id === convId
-            ? { ...c, last_message_text: msg.text, last_message_at: msg.created_at, unread_count: c.unread_count + 1, updated_at: msg.created_at }
+            ? {
+                ...c,
+                last_message_text: msg.text,
+                last_message_at: msg.created_at,
+                last_message_is_mine: isMine,
+                unread_count: isMine ? c.unread_count : c.unread_count + 1,
+                updated_at: msg.created_at,
+              }
             : c
         ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
+        break;
+      }
+      case "conversation.updated": {
+        const d = data.data;
+        if (!d.conversation_id) break;
+        setConversations(prev => {
+          const exists = prev.some(c => c.id === d.conversation_id);
+          if (exists) {
+            return prev.map(c =>
+              c.id === d.conversation_id
+                ? { ...c, last_message_text: d.last_message_text, last_message_at: d.last_message_at, last_message_is_mine: d.last_message_is_mine, unread_count: (c.unread_count || 0) + 1, updated_at: d.last_message_at }
+                : c
+            ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+          }
+          // New conversation — reload full list on next poll cycle
+          return prev;
+        });
         break;
       }
       case "typing": {
@@ -122,7 +160,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         break;
       }
       case "read_receipt.updated": {
-        const { conversation_id } = data.data;
+        const { conversation_id, user_id } = data.data;
+        // If the other user read our messages, update is_read on all messages
+        if (user_id !== currentUid) {
+          setMessages(prev => {
+            const convMsgs = prev[conversation_id];
+            if (!convMsgs) return prev;
+            return { ...prev, [conversation_id]: convMsgs.map(m => m.sender?.id === currentUid ? { ...m, is_read: true } : m) };
+          });
+        }
         setConversations(prev => prev.map(c =>
           c.id === conversation_id ? { ...c, unread_count: 0 } : c
         ));
@@ -161,8 +207,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         return new Date(timeB).getTime() - new Date(timeA).getTime();
       });
       setConversations(sorted);
+      // Show toast for new unread messages
+      const totalUnread = sorted.reduce((sum: number, c: any) => sum + (c.unread_count || 0), 0);
+      if (totalUnread > prevUnreadRef.current && prevUnreadRef.current >= 0) {
+        const newest = sorted.find((c: any) => c.unread_count > 0);
+        if (newest) {
+          const senderName = newest.other_user?.full_name || "Someone";
+          const preview = newest.last_message_text?.match(/^\[sticker:.+\]$/) ? "Sent a sticker" : newest.last_message_text || "New message";
+          showToast("notification", senderName, preview);
+        }
+      }
+      prevUnreadRef.current = totalUnread;
     } catch { /* failed to load conversations */ }
-  }, []);
+  }, [showToast]);
 
   /**
    * Load messages via REST API.

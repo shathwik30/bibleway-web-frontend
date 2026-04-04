@@ -6,7 +6,7 @@ import MainLayout from "../components/MainLayout";
 import { useChat } from "../lib/ChatContext";
 
 export default function ChatPage() {
-  const { conversations, loadConversations, markRead, onlineUsers } = useChat();
+  const { conversations, loadConversations, markRead, onlineUsers, connected } = useChat();
   const [searchQuery, setSearchQuery] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   useEffect(() => { setCurrentUserId(localStorage.getItem("user_id")); }, []);
@@ -51,15 +51,15 @@ export default function ChatPage() {
 
   return (
     <MainLayout hideFooter>
-      <div className="max-w-7xl mx-auto flex flex-col h-[calc(100vh-4rem)]" data-page>
+      <div className="max-w-7xl mx-auto flex flex-col h-[calc(100vh-4rem-5rem)] md:h-[calc(100vh-4rem)]" data-page>
         {/* Header */}
         <div className="px-5 pt-6 pb-2">
           <div className="flex items-center justify-between mb-5">
             <div>
               <h1 className="font-headline text-2xl text-on-surface tracking-tight">Messages</h1>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                <span className="text-[11px] text-on-surface-variant/60">Online</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-emerald-500" : "bg-amber-400"}`} />
+                <span className="text-[11px] text-on-surface-variant/60">{connected ? "Connected" : "Reconnecting..."}</span>
               </div>
             </div>
             <Link

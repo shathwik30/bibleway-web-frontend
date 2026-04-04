@@ -6,8 +6,10 @@ import Link from "next/link";
 import MainLayout from "../../../components/MainLayout";
 import { fetchAPI } from "../../../lib/api";
 import Shimmer from "../../../components/Shimmer";
+import { useToast } from "../../../components/Toast";
 
 export default function ProductDetailPage() {
+  const { showToast } = useToast();
   const params = useParams();
   const productId = params.id as string;
   const [product, setProduct] = useState<any>(null);
@@ -40,7 +42,7 @@ export default function ProductDetailPage() {
       setPurchased(true);
       setShowConfirm(false);
     } catch (err: any) {
-      alert(err.message || "Purchase failed.");
+      showToast("error", "Purchase Failed", err.message || "Purchase failed.");
     } finally {
       setPurchasing(false);
     }
@@ -54,10 +56,10 @@ export default function ProductDetailPage() {
       if (url) {
         window.open(url, "_blank");
       } else {
-        alert("Download not available.");
+        showToast("error", "Download Error", "Download not available.");
       }
     } catch {
-      alert("Download failed.");
+      showToast("error", "Download Error", "Download failed.");
     } finally {
       setDownloading(false);
     }

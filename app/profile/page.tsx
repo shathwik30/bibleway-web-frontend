@@ -5,8 +5,10 @@ import Link from "next/link";
 import MainLayout from "../components/MainLayout";
 import { fetchAPI } from "../lib/api";
 import ImageCropper from "../components/ImageCropper";
+import { useToast } from "../components/Toast";
 
 export default function ProfilePage() {
+  const { showToast } = useToast();
   const [profile, setProfile] = useState<any>(null);
   const [posts, setPosts] = useState<any[]>([]);
   const [prayers, setPrayers] = useState<any[]>([]);
@@ -100,7 +102,7 @@ export default function ProfilePage() {
       });
       setProfile((prev: any) => ({ ...prev, profile_photo: res.data?.profile_photo || res.profile_photo }));
     } catch {
-      alert("Failed to upload photo.");
+      showToast("error", "Upload Failed", "Failed to upload photo.");
     } finally {
       setUploadingPhoto(false);
     }
@@ -119,7 +121,7 @@ export default function ProfilePage() {
   if (!profile) {
     return (
       <MainLayout>
-        <div className="max-w-7xl mx-auto px-6 py-24 text-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-24 text-center">
           <h1 className="text-3xl font-headline mb-4">Please Sign In</h1>
           <p className="text-on-surface-variant mb-8">You need to be logged in to view your profile.</p>
           <a href="/login" className="bg-primary text-on-primary px-8 py-3 rounded-xl font-bold">Sign In</a>
@@ -138,7 +140,7 @@ export default function ProfilePage() {
 
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto px-6 py-12 lg:grid lg:grid-cols-12 lg:gap-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12 lg:grid lg:grid-cols-12 lg:gap-12">
         {/* Profile Sidebar */}
         <section className="lg:col-span-4 mb-12 lg:mb-0">
           <div className="sticky top-28">
@@ -175,7 +177,7 @@ export default function ProfilePage() {
 
               {/* Name & Bio */}
               <div className="text-center lg:text-left">
-                <h1 className="font-headline text-4xl text-on-surface mb-1">{profile.full_name}</h1>
+                <h1 className="font-headline text-2xl sm:text-4xl text-on-surface mb-1">{profile.full_name}</h1>
                 <p className="text-on-surface-variant font-body leading-relaxed max-w-sm">
                   {profile.bio || "No bio yet. Tell the community about your journey with faith."}
                 </p>

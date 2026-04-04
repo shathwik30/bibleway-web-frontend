@@ -5,8 +5,10 @@ import Link from "next/link";
 import MainLayout from "../components/MainLayout";
 import { fetchAPI } from "../lib/api";
 import Shimmer from "../components/Shimmer";
+import { useToast } from "../components/Toast";
 
 export default function AnalyticsPage() {
+  const { showToast } = useToast();
   const [analytics, setAnalytics] = useState<any>(null);
   const [boosts, setBoosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +53,7 @@ export default function AnalyticsPage() {
       const res = await fetchAPI("/analytics/boosts/list/").catch(() => null);
       if (res) setBoosts(res?.data?.results || res?.results || res?.data || []);
     } catch (err: any) {
-      alert(err.message || "Failed to create boost.");
+      showToast("error", "Boost Failed", err.message || "Failed to create boost.");
     } finally {
       setCreatingBoost(false);
     }
@@ -74,7 +76,7 @@ export default function AnalyticsPage() {
   if (loading) {
     return (
       <MainLayout>
-        <div className="max-w-7xl mx-auto px-6 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
           <Shimmer className="h-10 w-64 mb-8" />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
             {[1, 2, 3].map((i) => <Shimmer key={i} className="h-32 w-full rounded-xl" />)}
@@ -86,13 +88,13 @@ export default function AnalyticsPage() {
 
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto px-6 py-12 space-y-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8 sm:space-y-12">
         <div>
           <Link href="/profile" className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors mb-4">
             <span className="material-symbols-outlined">arrow_back</span>
             <span className="text-sm font-medium">Back to Profile</span>
           </Link>
-          <h1 className="text-4xl font-headline text-on-surface">Analytics</h1>
+          <h1 className="text-3xl sm:text-4xl font-headline text-on-surface">Analytics</h1>
           <p className="text-on-surface-variant mt-2">Track your engagement and reach.</p>
         </div>
 
@@ -149,7 +151,7 @@ export default function AnalyticsPage() {
             {postAnalyticsLoading ? (
               <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-primary"></div></div>
             ) : postAnalytics ? (
-              <div className="grid grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
                 <div className="text-center">
                   <p className="font-headline text-2xl text-primary">{postAnalytics.views ?? 0}</p>
                   <p className="text-xs text-on-surface-variant font-bold uppercase tracking-widest">Views</p>
@@ -189,7 +191,7 @@ export default function AnalyticsPage() {
                 placeholder="Budget"
                 value={boostBudget}
                 onChange={(e) => setBoostBudget(e.target.value)}
-                className="w-32 bg-surface-container-high border border-outline-variant/20 rounded-xl px-4 py-3 focus:outline-none focus:ring-1 focus:ring-primary/40"
+                className="w-full sm:w-32 bg-surface-container-high border border-outline-variant/20 rounded-xl px-4 py-3 focus:outline-none focus:ring-1 focus:ring-primary/40"
               />
               <button
                 onClick={handleCreateBoost}
@@ -233,7 +235,7 @@ export default function AnalyticsPage() {
                   {boostAnalyticsLoading ? (
                     <div className="flex justify-center py-4"><div className="animate-spin rounded-full h-6 w-6 border-t-2 border-primary"></div></div>
                   ) : boostAnalytics ? (
-                    <div className="grid grid-cols-3 gap-4 text-center">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
                       <div><p className="font-headline text-xl text-primary">{boostAnalytics.impressions ?? 0}</p><p className="text-xs text-on-surface-variant font-bold uppercase tracking-widest">Impressions</p></div>
                       <div><p className="font-headline text-xl text-primary">{boostAnalytics.clicks ?? 0}</p><p className="text-xs text-on-surface-variant font-bold uppercase tracking-widest">Clicks</p></div>
                       <div><p className="font-headline text-xl text-primary">{boostAnalytics.engagement ?? 0}</p><p className="text-xs text-on-surface-variant font-bold uppercase tracking-widest">Engagement</p></div>

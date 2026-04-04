@@ -7,6 +7,7 @@ import MainLayout from "../components/MainLayout";
 import { fetchAPI } from "../lib/api";
 import { useTranslation } from "../lib/i18n";
 import { useTheme } from "../lib/ThemeContext";
+import { useToast } from "../components/Toast";
 
 const LANGUAGES = [
   { code: "en", name: "English" },
@@ -22,6 +23,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const { t, setLocale, locale } = useTranslation();
   const { theme, setTheme } = useTheme();
+  const { showToast } = useToast();
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [language, setLanguage] = useState("en");
@@ -107,8 +109,8 @@ export default function SettingsPage() {
       const r = await fetchAPI(`/shop/downloads/${productId}/`);
       const url = r.data?.url || r.url || r.data?.download_url || r.download_url;
       if (url) window.open(url, "_blank");
-      else alert("Download not available.");
-    } catch { alert("Download failed."); }
+      else showToast("error", "Download Error", "Download not available.");
+    } catch { showToast("error", "Download Error", "Download failed."); }
   }
 
   async function handlePushToggle(enabled: boolean) {

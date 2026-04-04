@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import MainLayout from "../../components/MainLayout";
 import StickerPicker from "../../components/StickerPicker";
 import { useChat } from "../../lib/ChatContext";
 import { fetchAPI } from "../../lib/api";
+import { containsProfanity, getProfanityWarning } from "../../lib/contentFilter";
+import { useToast } from "../../components/Toast";
 
 interface MessageGroup {
   senderId: string;
@@ -21,7 +23,7 @@ export default function ChatConversationPage() {
   const {
     messages, loadMessages, sendMessage,
     markRead, sendTyping, typingUsers, getPresence, onlineUsers,
-    conversations,
+    conversations, connected,
   } = useChat();
   const [text, setText] = useState("");
   const [stickerOpen, setStickerOpen] = useState(false);
@@ -57,9 +59,22 @@ export default function ChatConversationPage() {
     };
   }, [convId, loadMessages, markRead, getPresence]);
 
+  const [newMsgCount, setNewMsgCount] = useState(0);
+  const isNearBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+  }, []);
+
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [convMessages.length]);
+    if (isNearBottom()) {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      setNewMsgCount(0);
+    } else {
+      // User is scrolled up — show unread indicator
+      setNewMsgCount(prev => prev + 1);
+    }
+  }, [convMessages.length, isNearBottom]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -99,8 +114,14 @@ export default function ChatConversationPage() {
     return groups;
   }, [convMessages, currentUserId]);
 
+  const { showToast } = useToast();
+
   async function handleSend() {
     if (!text.trim()) return;
+    if (containsProfanity(text)) {
+      showToast("error", "Language Warning", getProfanityWarning());
+      return;
+    }
     await sendMessage(convId, text.trim());
     setText("");
     setStickerOpen(false);
@@ -262,7 +283,7 @@ export default function ChatConversationPage() {
 
   return (
     <MainLayout hideFooter>
-      <div className="flex flex-col h-[calc(100vh-4rem)]" data-page>
+      <div className="flex flex-col h-[calc(100vh-4rem-5rem)] md:h-[calc(100vh-4rem)]" data-page>
         {/* Header */}
         <div className="flex items-center gap-3 px-3 py-2.5 border-b border-outline-variant/10 bg-surface-container-lowest/90 backdrop-blur-md sticky top-16 z-10">
           <button
@@ -292,7 +313,9 @@ export default function ChatConversationPage() {
                 <span className="text-primary font-medium">
                   {typing.join(", ")} typing...
                 </span>
-              ) : "Online"}
+              ) : otherUser?.id && onlineUsers[otherUser.id] ? (
+                <span className="text-emerald-500">Online</span>
+              ) : connected ? "Last seen recently" : "Connecting..."}
             </p>
           </div>
           <div className="relative">
@@ -326,6 +349,7 @@ export default function ChatConversationPage() {
         {/* Messages area */}
         <div
           ref={scrollRef}
+          onScroll={() => { if (isNearBottom()) setNewMsgCount(0); }}
           className="flex-1 overflow-y-auto px-3 py-4 custom-scrollbar bg-surface"
         >
           {convMessages.length === 0 && (
@@ -380,6 +404,20 @@ export default function ChatConversationPage() {
             </div>
           )}
         </div>
+
+        {/* New messages indicator */}
+        {newMsgCount > 0 && (
+          <button
+            onClick={() => {
+              scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+              setNewMsgCount(0);
+            }}
+            className="mx-auto flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-on-primary text-xs font-semibold shadow-lg shadow-primary/20 hover:opacity-90 transition-all -mt-2 mb-2 relative z-10"
+          >
+            <span className="material-symbols-outlined text-sm">arrow_downward</span>
+            {newMsgCount} new message{newMsgCount > 1 ? "s" : ""}
+          </button>
+        )}
 
         {/* Input area */}
         <div className="px-3 py-2.5 border-t border-outline-variant/8 bg-surface-container-lowest">

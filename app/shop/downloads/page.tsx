@@ -5,8 +5,10 @@ import Link from "next/link";
 import MainLayout from "../../components/MainLayout";
 import { fetchAPI } from "../../lib/api";
 import Shimmer from "../../components/Shimmer";
+import { useToast } from "../../components/Toast";
 
 export default function DownloadsPage() {
+  const { showToast } = useToast();
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -37,10 +39,10 @@ export default function DownloadsPage() {
       if (url) {
         window.open(url, "_blank");
       } else {
-        alert("Download not available.");
+        showToast("error", "Download Error", "Download not available.");
       }
     } catch {
-      alert("Download failed. Please try again.");
+      showToast("error", "Download Error", "Download failed. Please try again.");
     } finally {
       setDownloadingId(null);
     }

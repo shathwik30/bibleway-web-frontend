@@ -65,7 +65,7 @@ export default function Navbar({ sidebarCollapsed, onToggleSidebar }: NavbarProp
 
   return (
     <header className="glass-header fixed top-0 left-0 right-0 z-50 transition-shadow duration-300 hover:shadow-sm">
-      <div className="flex justify-between items-center w-full px-6 h-16">
+      <div className="flex justify-between items-center w-full px-3 sm:px-6 h-16">
         {/* Left: Sidebar toggle + Logo */}
         <div className="flex items-center gap-3">
           {onToggleSidebar && (

@@ -4,6 +4,7 @@ import { I18nProvider } from "./lib/i18n";
 import { ChatProvider } from "./lib/ChatContext";
 import { ThemeProvider } from "./lib/ThemeContext";
 import QueryProvider from "./lib/QueryProvider";
+import { ToastProvider } from "./components/Toast";
 
 export const metadata: Metadata = {
   title: "Bibleway — The Modern Sanctuary",
@@ -29,7 +30,7 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-surface text-on-surface font-body antialiased">
-        <QueryProvider><ThemeProvider><I18nProvider><ChatProvider>{children}</ChatProvider></I18nProvider></ThemeProvider></QueryProvider>
+        <QueryProvider><ThemeProvider><ToastProvider><I18nProvider><ChatProvider>{children}</ChatProvider></I18nProvider></ToastProvider></ThemeProvider></QueryProvider>
       </body>
     </html>
   );

@@ -90,7 +90,7 @@ export default function FindDifferencePage() {
   if (screen === "levels") {
     return (
       <MainLayout>
-        <div className="max-w-7xl mx-auto px-6 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
           <Link href="/games" className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors mb-6">
             <span className="material-symbols-outlined">arrow_back</span>
             <span className="text-sm font-medium">Games</span>
@@ -131,7 +131,7 @@ export default function FindDifferencePage() {
     const isLastLevel = levelId >= FTD_LEVELS.length;
     return (
       <MainLayout>
-        <div className="max-w-md mx-auto px-6 py-16 text-center">
+        <div className="max-w-md mx-auto px-4 sm:px-6 py-12 sm:py-16 text-center">
           <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
             <span className="material-symbols-outlined text-primary text-4xl">visibility</span>
           </div>
@@ -186,7 +186,7 @@ export default function FindDifferencePage() {
 
   return (
     <MainLayout>
-      <div className="max-w-3xl mx-auto px-6 py-8">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <div className="flex items-center justify-between mb-4">
           <button onClick={() => setScreen("levels")} className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors">
             <span className="material-symbols-outlined">arrow_back</span>

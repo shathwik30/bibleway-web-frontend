@@ -37,7 +37,7 @@ export default function MainLayout({
       <div className="flex min-h-[calc(100vh-4rem)]">
         <Sidebar collapsed={sidebarCollapsed} />
         <div className="flex-1 min-w-0 flex flex-col">
-          <main className="flex-1" data-page>
+          <main className={`flex-1 ${hideFooter ? "" : "pb-24 md:pb-0"}`} data-page>
             {children}
           </main>
           {!hideFooter && <Footer />}

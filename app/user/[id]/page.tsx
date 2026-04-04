@@ -111,7 +111,7 @@ export default function PublicProfilePage() {
   if (!profile) {
     return (
       <MainLayout>
-        <div className="max-w-7xl mx-auto px-6 py-24 text-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-24 text-center">
           <h1 className="text-3xl font-headline mb-4">User Not Found</h1>
           <Link href="/" className="text-primary font-bold">Go Home</Link>
         </div>
@@ -121,7 +121,7 @@ export default function PublicProfilePage() {
 
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto px-6 py-12 lg:grid lg:grid-cols-12 lg:gap-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12 lg:grid lg:grid-cols-12 lg:gap-12">
         {/* Profile Sidebar */}
         <section className="lg:col-span-4 mb-12 lg:mb-0">
           <div className="sticky top-28 flex flex-col items-center lg:items-start space-y-6">
@@ -134,7 +134,7 @@ export default function PublicProfilePage() {
             </div>
 
             <div className="text-center lg:text-left">
-              <h1 className="font-headline text-4xl text-on-surface mb-1">{profile.full_name}</h1>
+              <h1 className="font-headline text-2xl sm:text-4xl text-on-surface mb-1">{profile.full_name}</h1>
               <p className="text-on-surface-variant font-body leading-relaxed max-w-sm">
                 {profile.bio || "No bio yet."}
               </p>

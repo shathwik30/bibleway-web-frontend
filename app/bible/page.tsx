@@ -12,6 +12,7 @@ import TTSControls from "../components/TTSControls";
 import YouTubeSermons from "../components/YouTubeSermons";
 import { useBibles, useBooks, useChapters, useChapterContent, useStudySections, useStudyChapters, useStudyPages, useStudyPageDetail, useBookmarks, useNotes, useAddBookmark, useRemoveBookmark, useAddNote, useRemoveNote, useUpdateNote, useBibleSearch, useApiBibleSearch } from "../lib/hooks";
 import { translateText, LANGUAGES, DEFAULT_LANGUAGE, type Language } from "../lib/translate";
+import { useToast } from "../components/Toast";
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -147,7 +148,7 @@ type ReaderStep = "pick-bible" | "pick-book" | "pick-chapter" | "reading";
 // ─── Step type for the Study flow ──────────────────────────────
 type StudyStep = "pick-section" | "pick-module" | "reading";
 
-type TabKey = "standard" | "study" | "search" | "bookmarks" | "notes";
+type TabKey = "standard" | "study" | "bookmarks" | "notes";
 
 // ─── LocalStorage helpers for highlight selected_text ────────────
 function getHighlightTextMap(): Record<string, string> {
@@ -180,9 +181,10 @@ function enrichHighlightsWithText(highlights: any[]): any[] {
 }
 
 function BibleContent() {
+  const { showToast } = useToast();
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get("tab") as TabKey) || "standard";
-  const validTabs: TabKey[] = ["standard", "study", "search", "bookmarks", "notes"];
+  const validTabs: TabKey[] = ["standard", "study", "bookmarks", "notes"];
   const [activeTab, setActiveTab] = useState<TabKey>(validTabs.includes(initialTab) ? initialTab : "standard");
 
   useEffect(() => {
@@ -280,12 +282,14 @@ function BibleContent() {
   }, [pages]);
 
   // ═══════════════════════════════════════════════════════════════
-  // SEARCH STATE (shared between inline search and Search tab)
+  // SEARCH STATE
   // ═══════════════════════════════════════════════════════════════
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [inlineSearchOpen, setInlineSearchOpen] = useState(false);
+  const [showAllResults, setShowAllResults] = useState(false);
   useEffect(() => {
+    setShowAllResults(false);
     const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 400);
     return () => clearTimeout(timer);
   }, [searchQuery]);
@@ -416,7 +420,7 @@ function BibleContent() {
       setSelectionPopup(null);
       window.getSelection()?.removeAllRanges();
     } catch (err: any) {
-      alert(err.message || "Failed to highlight.");
+      showToast("error", "Highlight Failed", err.message || "Failed to highlight.");
     }
   }
 
@@ -498,6 +502,7 @@ function BibleContent() {
     setSelectedBible(bible);
     setSelectedBook(null);
     setSelectedChapterId("");
+    setSearchQuery("");
     setReaderStep("pick-book");
     pushBibleHistory("pick-book", "standard", { bible });
   }
@@ -505,6 +510,7 @@ function BibleContent() {
   function handlePickBook(book: any) {
     setSelectedBook(book);
     setSelectedChapterId("");
+    setSearchQuery("");
     setReaderStep("pick-chapter");
     pushBibleHistory("pick-chapter", "standard", { bible: selectedBible, book });
   }
@@ -549,6 +555,7 @@ function BibleContent() {
   // ─── Breadcrumb back navigation — just clear selections, data stays cached ──
   function goBackReader(to: ReaderStep) {
     setReaderStep(to);
+    setSearchQuery("");
     if (to === "pick-bible") { setSelectedBible(null); setSelectedBook(null); setSelectedChapterId(""); }
     if (to === "pick-book") { setSelectedBook(null); setSelectedChapterId(""); }
     if (to === "pick-chapter") { setSelectedChapterId(""); }
@@ -572,7 +579,6 @@ function BibleContent() {
             {([
               { key: "standard" as TabKey, label: "Bible", icon: "menu_book" },
               { key: "study" as TabKey, label: "Study", icon: "school" },
-              { key: "search" as TabKey, label: "Search", icon: "search" },
               { key: "bookmarks" as TabKey, label: "Bookmarks", icon: "bookmark" },
               { key: "notes" as TabKey, label: "Notes", icon: "edit_note" },
             ]).map((tab) => (
@@ -615,88 +621,26 @@ function BibleContent() {
               )}
             </div>
 
-            {/* Inline Search Bar */}
-            <div ref={inlineSearchRef} className="relative mb-6">
+            {/* Filter Search Bar — filters Bible versions, books, or chapters depending on current step */}
+            <div className="mb-6">
               <div className="relative">
                 <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 text-lg">search</span>
                 <input
                   type="text"
                   value={searchQuery}
-                  onChange={(e) => { setSearchQuery(e.target.value); setInlineSearchOpen(true); }}
-                  onFocus={() => { if (searchQuery.trim()) setInlineSearchOpen(true); }}
-                  placeholder="Search the Bible..."
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={readerStep === "pick-bible" ? "Filter translations..." : readerStep === "pick-book" ? "Filter books..." : readerStep === "pick-chapter" ? "Filter chapters..." : "Search..."}
                   className="w-full pl-11 pr-10 py-2.5 rounded-xl bg-surface-container-lowest border border-outline-variant/15 text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 text-sm transition-all"
                 />
                 {searchQuery && (
                   <button
-                    onClick={() => { setSearchQuery(""); setInlineSearchOpen(false); }}
+                    onClick={() => setSearchQuery("")}
                     className="absolute right-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/40 hover:text-on-surface transition-colors"
                   >
                     <span className="material-symbols-outlined text-lg">close</span>
                   </button>
                 )}
               </div>
-
-              {/* Inline search results dropdown */}
-              {inlineSearchOpen && debouncedSearch && (
-                <div className="absolute z-50 mt-1 w-full max-h-80 bg-surface-container-lowest rounded-xl border border-outline-variant/15 shadow-xl overflow-hidden">
-                  <div className="overflow-y-auto max-h-80 custom-scrollbar">
-                    {(segregatedSearchLoading || apiBibleSearchLoading) ? (
-                      <div className="flex items-center justify-center py-6">
-                        <span className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-                        <span className="ml-2 text-sm text-on-surface-variant/60">Searching...</span>
-                      </div>
-                    ) : (
-                      <>
-                        {apiBibleVerses.length > 0 && (
-                          <div className="p-2">
-                            <p className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60 px-2 py-1">Bible Verses</p>
-                            {apiBibleVerses.slice(0, 8).map((v: any) => (
-                              <button
-                                key={v.id}
-                                onClick={() => {
-                                  if (v.chapterId) {
-                                    setSelectedChapterId(v.chapterId);
-                                    setReaderStep("reading");
-                                  }
-                                  setInlineSearchOpen(false);
-                                }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-surface-container-low transition-colors"
-                              >
-                                <p className="text-sm font-semibold text-primary">{v.reference}</p>
-                                <p className="text-xs text-on-surface-variant line-clamp-1">{v.text?.replace(/<[^>]+>/g, "")}</p>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        {segregatedResults.length > 0 && (
-                          <div className="p-2 border-t border-outline-variant/10">
-                            <p className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60 px-2 py-1">Study Content</p>
-                            {segregatedResults.slice(0, 5).map((r: any) => (
-                              <div key={r.id} className="px-3 py-2 rounded-lg hover:bg-surface-container-low transition-colors">
-                                <p className="text-sm font-semibold text-on-surface">{r.title}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {apiBibleVerses.length === 0 && segregatedResults.length === 0 && (
-                          <div className="py-6 text-center">
-                            <p className="text-sm text-on-surface-variant/60">No results for &ldquo;{debouncedSearch}&rdquo;</p>
-                          </div>
-                        )}
-                        {(apiBibleVerses.length > 8 || segregatedResults.length > 5) && (
-                          <button
-                            onClick={() => { setActiveTab("search"); setInlineSearchOpen(false); }}
-                            className="w-full py-2.5 text-center text-sm text-primary font-semibold hover:bg-surface-container-low transition-colors border-t border-outline-variant/10"
-                          >
-                            View all results
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* STEP 1: Pick Bible Translation */}
@@ -710,7 +654,14 @@ function BibleContent() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {bibles.map((b) => (
+                    {bibles.filter((b) => {
+                      if (!searchQuery.trim()) return true;
+                      const q = searchQuery.toLowerCase();
+                      return (b.nameLocal || b.name || "").toLowerCase().includes(q)
+                        || (b.abbreviation || "").toLowerCase().includes(q)
+                        || (b.description || "").toLowerCase().includes(q)
+                        || (b.language?.nameLocal || "").toLowerCase().includes(q);
+                    }).map((b) => (
                       <button
                         key={b.id}
                         onClick={() => handlePickBible(b)}
@@ -747,7 +698,11 @@ function BibleContent() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {books.map((b) => (
+                    {books.filter((b) => {
+                      if (!searchQuery.trim()) return true;
+                      const q = searchQuery.toLowerCase();
+                      return (b.name || "").toLowerCase().includes(q) || (b.abbreviation || "").toLowerCase().includes(q);
+                    }).map((b) => (
                       <button
                         key={b.id}
                         onClick={() => handlePickBook(b)}
@@ -1084,101 +1039,6 @@ function BibleContent() {
                     </div>
                   )}
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ══════════════ SEARCH TAB ══════════════ */}
-        {activeTab === "search" && (
-          <div className="w-full max-w-7xl px-4 sm:px-6 lg:px-8 pb-32">
-            <h1 className="text-3xl sm:text-4xl font-headline text-on-surface mb-2">Search the Bible</h1>
-            <p className="text-on-surface-variant mb-6">Search across Bible verses and study content.</p>
-
-            <div className="relative mb-8">
-              <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant/40">search</span>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search verses, topics, keywords..."
-                autoFocus
-                className="w-full pl-12 pr-4 py-3.5 rounded-xl bg-surface-container-lowest border border-outline-variant/15 text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 text-base transition-all"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant/40 hover:text-on-surface transition-colors"
-                >
-                  <span className="material-symbols-outlined text-lg">close</span>
-                </button>
-              )}
-            </div>
-
-            {(segregatedSearchLoading || apiBibleSearchLoading) && debouncedSearch ? (
-              <div className="space-y-3">
-                {[1, 2, 3, 4].map((i) => <Shimmer key={i} className="h-20 rounded-xl" />)}
-              </div>
-            ) : debouncedSearch ? (
-              <div className="space-y-6">
-                {/* API Bible results */}
-                {apiBibleVerses.length > 0 && (
-                  <div>
-                    <label className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60 block mb-3">
-                      Bible Verses ({apiBibleVerses.length})
-                    </label>
-                    <div className="space-y-3">
-                      {apiBibleVerses.map((v: any) => (
-                        <button
-                          key={v.id}
-                          onClick={() => {
-                            if (v.chapterId) {
-                              setSelectedChapterId(v.chapterId);
-                              setReaderStep("reading");
-                              setActiveTab("standard");
-                            }
-                          }}
-                          className="w-full text-left p-4 rounded-xl bg-surface-container-lowest border border-outline-variant/15 hover:border-primary/30 hover:shadow-md transition-all group"
-                        >
-                          <p className="text-sm font-semibold text-primary mb-1">{v.reference}</p>
-                          <p className="text-base text-on-surface-variant line-clamp-2">{v.text?.replace(/<[^>]+>/g, "")}</p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Segregated/study results */}
-                {segregatedResults.length > 0 && (
-                  <div>
-                    <label className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60 block mb-3">
-                      Study Content ({segregatedResults.length})
-                    </label>
-                    <div className="space-y-3">
-                      {segregatedResults.map((r: any) => (
-                        <div
-                          key={r.id}
-                          className="p-4 rounded-xl bg-surface-container-lowest border border-outline-variant/15"
-                        >
-                          <p className="text-sm font-semibold text-on-surface">{r.title}</p>
-                          {r.chapter && <p className="text-xs text-on-surface-variant/60 mt-1">Chapter: {r.chapter}</p>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {apiBibleVerses.length === 0 && segregatedResults.length === 0 && (
-                  <div className="py-16 text-center">
-                    <span className="material-symbols-outlined text-6xl text-on-surface-variant/20 mb-4 block">search_off</span>
-                    <p className="text-on-surface-variant/60 text-lg">No results found for &ldquo;{debouncedSearch}&rdquo;</p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="py-16 text-center">
-                <span className="material-symbols-outlined text-6xl text-on-surface-variant/20 mb-4 block">search</span>
-                <p className="text-on-surface-variant/60 text-lg">Start typing to search the Bible</p>
               </div>
             )}
           </div>

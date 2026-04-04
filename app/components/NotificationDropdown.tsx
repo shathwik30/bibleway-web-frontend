@@ -1,9 +1,32 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { fetchAPI } from "../lib/api";
 
+function getNotificationLink(n: any): string | null {
+  const data = n.data || {};
+  switch (n.notification_type) {
+    case "new_message":
+      return data.conversation_id ? `/chat/${data.conversation_id}` : "/chat";
+    case "comment":
+    case "reaction":
+    case "share":
+      return data.post_id ? `/post/${data.post_id}` : null;
+    case "prayer_comment":
+      return data.prayer_id ? `/prayer/${data.prayer_id}` : null;
+    case "follow":
+      return data.user_id ? `/user/${data.user_id}` : (n.sender?.id ? `/user/${n.sender.id}` : null);
+    case "boost_live":
+    case "boost_digest":
+      return "/analytics";
+    default:
+      return null;
+  }
+}
+
 export default function NotificationDropdown() {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -137,6 +160,8 @@ export default function NotificationDropdown() {
                     className={`p-4 transition-colors cursor-pointer group relative ${!n.is_read ? 'bg-primary/5 hover:bg-primary/10' : 'hover:bg-surface-container-low'}`}
                     onClick={() => {
                         if (!n.is_read) markAsRead(n.id);
+                        const link = getNotificationLink(n);
+                        if (link) { setIsOpen(false); router.push(link); }
                     }}
                   >
                     <div className="flex gap-4">

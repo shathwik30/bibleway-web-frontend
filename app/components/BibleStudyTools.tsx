@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { fetchAPI } from "../lib/api";
 import { formatVerseRef } from "../bible/page";
+import { useToast } from "./Toast";
 
 // Helper to enrich highlights with locally-stored selected_text
 function getHighlightTextMap(): Record<string, string> {
@@ -35,6 +36,7 @@ interface BibleStudyToolsProps {
 }
 
 export default function BibleStudyTools({ selectedBibleId, selectedChapterId, onNavigateToChapter, onHighlightsChange }: BibleStudyToolsProps) {
+  const { showToast } = useToast();
   const [activePanel, setActivePanel] = useState<"search" | "bookmarks" | "highlights" | "notes" | null>(null);
 
   // Search
@@ -99,7 +101,7 @@ export default function BibleStudyTools({ selectedBibleId, selectedChapterId, on
       const newBm = res.data || res;
       setBookmarks((prev) => [newBm, ...prev]);
     } catch (err: any) {
-      alert(err.message || "Failed to bookmark.");
+      showToast("error", "Bookmark Failed", err.message || "Failed to bookmark.");
     }
   }
 
@@ -159,7 +161,7 @@ export default function BibleStudyTools({ selectedBibleId, selectedChapterId, on
       setNotes((prev) => [newN, ...prev]);
       setNewNoteText("");
     } catch (err: any) {
-      alert(err.message || "Failed to add note.");
+      showToast("error", "Note Failed", err.message || "Failed to add note.");
     } finally {
       setAddingNote(false);
     }

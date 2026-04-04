@@ -4,6 +4,15 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { fetchAPI } from "../lib/api";
 import StickerPicker, { STICKERS } from "./StickerPicker";
+import { containsProfanity, getProfanityWarning } from "../lib/contentFilter";
+import { useToast } from "./Toast";
+
+interface MediaItem {
+  id?: string;
+  file: string;
+  media_type: string;
+  order?: number;
+}
 
 interface FeedPost {
   id: string;
@@ -15,6 +24,7 @@ interface FeedPost {
   title?: string;
   content: string;
   image?: string;
+  media?: MediaItem[];
   likes: number;
   prayers?: number;
   comments: number;
@@ -30,6 +40,76 @@ const REACTIONS = [
   { type: "amen", emoji: "\u{1F64C}", label: "Amen" },
   { type: "cross", emoji: "\u271D\uFE0F", label: "Cross" },
 ];
+
+function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center cursor-zoom-out" onClick={onClose}>
+      <button onClick={onClose} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors">
+        <span className="material-symbols-outlined">close</span>
+      </button>
+      <img src={src} alt="Preview" className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg" onClick={(e) => e.stopPropagation()} />
+    </div>
+  );
+}
+
+function PostMediaCarousel({ media }: { media: { file: string; media_type: string }[] }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  function scrollTo(index: number) {
+    const clamped = Math.max(0, Math.min(index, media.length - 1));
+    setActiveIndex(clamped);
+    scrollRef.current?.children[clamped]?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+  }
+
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const index = Math.round(el.scrollLeft / el.clientWidth);
+    setActiveIndex(index);
+  }
+
+  return (
+    <>
+      <div className="relative rounded-xl overflow-hidden mb-6 bg-surface-container-low">
+        <div ref={scrollRef} onScroll={handleScroll} className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar">
+          {media.map((item, i) => (
+            <div key={i} className="w-full shrink-0 snap-center cursor-zoom-in" onClick={() => setLightboxSrc(item.file)}>
+              <img src={item.file} alt={`Media ${i + 1}`} className="w-full object-cover max-h-[600px] min-h-[200px]" />
+            </div>
+          ))}
+        </div>
+        {media.length > 1 && (
+          <>
+            {activeIndex > 0 && (
+              <button onClick={(e) => { e.stopPropagation(); scrollTo(activeIndex - 1); }} className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors">
+                <span className="material-symbols-outlined text-lg">chevron_left</span>
+              </button>
+            )}
+            {activeIndex < media.length - 1 && (
+              <button onClick={(e) => { e.stopPropagation(); scrollTo(activeIndex + 1); }} className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors">
+                <span className="material-symbols-outlined text-lg">chevron_right</span>
+              </button>
+            )}
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+              {media.map((_, i) => (
+                <div key={i} className={`w-1.5 h-1.5 rounded-full transition-all ${i === activeIndex ? "bg-white w-3" : "bg-white/50"}`} />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+      {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
+    </>
+  );
+}
 
 interface FeedCardProps {
   post: FeedPost;
@@ -48,6 +128,7 @@ export default function FeedCard({
   post, currentUserId, onReact, onDelete, onShare, onReport,
   animatingReaction, openReactionId, setOpenReactionId, reactionRef,
 }: FeedCardProps) {
+  const { showToast } = useToast();
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<any[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
@@ -97,6 +178,10 @@ export default function FeedCard({
 
   async function handlePostComment() {
     if (!newComment.trim() || postingComment) return;
+    if (containsProfanity(newComment)) {
+      showToast("error", "Language Warning", getProfanityWarning());
+      return;
+    }
     setPostingComment(true);
     try {
       const endpoint = post.type === "post"
@@ -132,6 +217,10 @@ export default function FeedCard({
 
   async function handlePostReply(commentId: string) {
     if (!replyText.trim() || postingReply) return;
+    if (containsProfanity(replyText)) {
+      showToast("error", "Language Warning", getProfanityWarning());
+      return;
+    }
     setPostingReply(true);
     try {
       await fetchAPI(`/social/comments/${commentId}/replies/`, { method: "POST", body: JSON.stringify({ text: replyText.trim() }) });
@@ -183,29 +272,13 @@ export default function FeedCard({
   }
 
   function renderPostContent(text: string, type: string) {
-    const stickerMatch = text.match(/^\[sticker:(\w+)\]$/);
-    if (stickerMatch) {
-      const stickerId = stickerMatch[1];
-      const gifMatch = stickerId.match(/^gif_(\d+)$/);
-      if (gifMatch) {
-        return (
-          <div className="flex justify-center mb-6">
-            <img src={`/stickers/sticker_${gifMatch[1]}.gif`} alt="Sticker" className="w-32 h-32 object-contain" />
-          </div>
-        );
-      }
-      const sticker = STICKERS.find((s) => s.id === stickerId);
-      if (sticker) {
-        return <p className="text-6xl text-center mb-6">{sticker.emoji}</p>;
-      }
-    }
     return <p className={`text-on-surface leading-relaxed mb-6 ${type === "prayer" ? "italic text-xl" : "text-lg"}`}>{text}</p>;
   }
 
   const userReactionEmoji = post.userReaction ? REACTIONS.find((r) => r.type === post.userReaction)?.emoji : null;
 
   return (
-    <article data-post-id={post.id} data-post-type={post.type} className="bg-surface-container-lowest rounded-xl p-8 editorial-shadow relative card-hover">
+    <article data-post-id={post.id} data-post-type={post.type} className="bg-surface-container-lowest rounded-xl p-8 editorial-shadow relative">
       {animatingReaction?.postId === post.id && (
         <div className="reaction-animate top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">{animatingReaction.emoji}</div>
       )}
@@ -253,16 +326,16 @@ export default function FeedCard({
         </div>
       </div>
 
-      <Link href={`/${post.type === "prayer" ? "prayer" : "post"}/${post.id}`} className="block group/link">
-        {post.title && <h3 className="text-2xl font-headline mb-3 group-hover/link:text-primary transition-colors">{post.title}</h3>}
+      <Link href={`/${post.type === "prayer" ? "prayer" : "post"}/${post.id}`} className="block">
+        {post.title && <h3 className="text-2xl font-headline mb-3 hover:text-primary transition-colors">{post.title}</h3>}
         {renderPostContent(post.content, post.type)}
       </Link>
 
-      {post.image && (
-        <div className="rounded-xl overflow-hidden mb-6 max-h-96 bg-surface-container-low flex items-center justify-center img-zoom">
-          <img src={post.image} alt="Post media" className="w-full h-full object-cover" />
-        </div>
-      )}
+      {(() => {
+        const media = post.media && post.media.length > 0 ? post.media : post.image ? [{ file: post.image, media_type: "image" }] : [];
+        if (media.length === 0) return null;
+        return <PostMediaCarousel media={media} />;
+      })()}
 
       <div className="flex items-center justify-between pt-4 border-t border-outline-variant/10" ref={openReactionId === post.id ? reactionRef : undefined}>
         <div className="flex items-center space-x-6">

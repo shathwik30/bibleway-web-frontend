@@ -181,7 +181,7 @@ export default function SinglePrayerPage() {
   if (!prayer) {
     return (
       <MainLayout>
-        <div className="max-w-3xl mx-auto px-6 py-24 text-center">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-24 text-center">
           <h1 className="text-3xl font-headline mb-4">Prayer Request Not Found</h1>
           <Link href="/" className="text-primary font-bold">Go Home</Link>
         </div>
@@ -193,13 +193,13 @@ export default function SinglePrayerPage() {
 
   return (
     <MainLayout>
-      <div className="max-w-3xl mx-auto px-6 py-12">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <Link href="/" className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors mb-8">
           <span className="material-symbols-outlined">arrow_back</span>
           <span className="text-sm font-medium">Back to Feed</span>
         </Link>
 
-        <article className="bg-surface-container-low rounded-xl p-8 editorial-shadow">
+        <article className="bg-surface-container-low rounded-xl p-4 sm:p-8 editorial-shadow">
           <div className="flex items-center space-x-4 mb-6">
             <Link href={`/user/${prayer.author?.id}`} className="w-12 h-12 rounded-full overflow-hidden bg-surface-container-high flex items-center justify-center">
               {prayer.author?.profile_photo ? (
