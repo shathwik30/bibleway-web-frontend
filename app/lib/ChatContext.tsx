@@ -5,11 +5,6 @@ import { useWebSocket } from "./useWebSocket";
 import { fetchAPI } from "./api";
 import { useToast } from "../components/Toast";
 
-/**
- * Conversation shape from the backend ConversationListSerializer.
- * Fields: id, other_user, last_message_text, last_message_at,
- *         last_message_is_mine, unread_count, created_at, updated_at
- */
 interface Conversation {
   id: string;
   other_user?: {
@@ -26,10 +21,6 @@ interface Conversation {
   updated_at: string;
 }
 
-/**
- * Message shape from the backend MessageSerializer.
- * Fields: id, sender: { id, full_name, profile_photo, age }, text, is_read, created_at
- */
 interface Message {
   id: string;
   sender: {
@@ -48,9 +39,7 @@ interface ChatContextType {
   messages: Record<string, Message[]>;
   activeConversation: string | null;
   setActiveConversation: (id: string | null) => void;
-  sendMessage: (convId: string, text: string, opts?: { parentMessageId?: string; fileUrl?: string; fileType?: string; fileSize?: number; fileName?: string }) => void;
-  editMessage: (messageId: string, text: string) => void;
-  deleteMessage: (messageId: string) => void;
+  sendMessage: (convId: string, text: string) => void;
   markRead: (convId: string) => void;
   sendTyping: (convId: string, isTyping: boolean) => void;
   typingUsers: Record<string, string[]>;
@@ -72,11 +61,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
   const [onlineUsers, setOnlineUsers] = useState<Record<string, boolean>>({});
   const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const pollInterval = useRef<ReturnType<typeof setInterval>>(undefined);
   const prevUnreadRef = useRef<number>(0);
   const { showToast } = useToast();
-
-  // WS message handler — real-time updates when connected
+  // Track which conversations we've joined (have messages loaded) to avoid double unread counts
+  const joinedConvsRef = useRef<Set<string>>(new Set());
   const handleWsMessage = useCallback((data: any) => {
     const currentUid = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
@@ -85,54 +73,65 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const msg = data.data;
         const convId = msg.conversation_id;
         if (!convId) break;
-        const msgId = msg.message_id || msg.id;
-        const isMine = msg.sender_id === currentUid;
+        const currentUserId = localStorage.getItem("user_id") || "";
+        const realId = msg.message_id || msg.id;
+        const isOwn = msg.sender_id === currentUserId;
 
-        // Deduplicate — don't add if already in state (from REST send or polling)
         setMessages(prev => {
           const existing = prev[convId] || [];
-          if (existing.some(m => m.id === msgId)) return prev;
+          if (existing.some(m => m.id === realId)) return prev;
+
+          if (isOwn) {
+            const idx = existing.findLastIndex(
+              m => m.sender.id === currentUserId && m.text === msg.text
+            );
+            if (idx !== -1) {
+              const updated = [...existing];
+              updated[idx] = { ...updated[idx], id: realId, created_at: msg.created_at };
+              return { ...prev, [convId]: updated };
+            }
+            return prev;
+          }
+
           return {
             ...prev,
             [convId]: [...existing, {
-              id: msgId,
+              id: realId,
               sender: { id: msg.sender_id, full_name: msg.sender_name, profile_photo: msg.sender_photo || null },
               text: msg.text,
-              is_read: msg.is_read ?? false,
+              is_read: false,
               created_at: msg.created_at,
-            }]
+            }],
           };
         });
 
-        // Update conversation list
-        setConversations(prev => prev.map(c =>
-          c.id === convId
-            ? {
-                ...c,
-                last_message_text: msg.text,
-                last_message_at: msg.created_at,
-                last_message_is_mine: isMine,
-                unread_count: isMine ? c.unread_count : c.unread_count + 1,
-                updated_at: msg.created_at,
-              }
-            : c
-        ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
+        if (!isOwn) {
+          setConversations(prev => prev.map(c =>
+            c.id === convId
+              ? { ...c, last_message_text: msg.text, last_message_at: msg.created_at, unread_count: c.unread_count + 1, updated_at: msg.created_at }
+              : c
+          ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
+        }
         break;
       }
       case "conversation.updated": {
         const d = data.data;
         if (!d.conversation_id) break;
+        const alreadyInGroup = joinedConvsRef.current.has(d.conversation_id);
         setConversations(prev => {
-          const exists = prev.some(c => c.id === d.conversation_id);
-          if (exists) {
-            return prev.map(c =>
-              c.id === d.conversation_id
-                ? { ...c, last_message_text: d.last_message_text, last_message_at: d.last_message_at, last_message_is_mine: d.last_message_is_mine, unread_count: (c.unread_count || 0) + 1, updated_at: d.last_message_at }
-                : c
-            ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
-          }
-          // New conversation — reload full list on next poll cycle
-          return prev;
+          const updated = prev.map(c =>
+            c.id === d.conversation_id
+              ? {
+                  ...c,
+                  last_message_text: d.last_message_text,
+                  last_message_at: d.last_message_at,
+                  last_message_is_mine: d.last_message_is_mine ?? false,
+                  unread_count: alreadyInGroup ? c.unread_count : c.unread_count + 1,
+                  updated_at: d.last_message_at,
+                }
+              : c
+          );
+          return updated.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
         });
         break;
       }
@@ -141,37 +140,43 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         if (is_typing) {
           setTypingUsers(prev => ({
             ...prev,
-            [conversation_id]: [...new Set([...(prev[conversation_id] || []), user_name])]
+            [conversation_id]: [...new Set([...(prev[conversation_id] || []), user_name])],
           }));
           const key = `${conversation_id}-${user_name}`;
           clearTimeout(typingTimers.current[key]);
           typingTimers.current[key] = setTimeout(() => {
             setTypingUsers(prev => ({
               ...prev,
-              [conversation_id]: (prev[conversation_id] || []).filter(n => n !== user_name)
+              [conversation_id]: (prev[conversation_id] || []).filter(n => n !== user_name),
             }));
           }, 3000);
         } else {
           setTypingUsers(prev => ({
             ...prev,
-            [conversation_id]: (prev[conversation_id] || []).filter(n => n !== user_name)
+            [conversation_id]: (prev[conversation_id] || []).filter(n => n !== user_name),
           }));
         }
         break;
       }
       case "read_receipt.updated": {
         const { conversation_id, user_id } = data.data;
-        // If the other user read our messages, update is_read on all messages
-        if (user_id !== currentUid) {
+        const currentUserId = localStorage.getItem("user_id") || "";
+        if (user_id === currentUserId) {
+          setConversations(prev => prev.map(c =>
+            c.id === conversation_id ? { ...c, unread_count: 0 } : c
+          ));
+        } else {
           setMessages(prev => {
             const convMsgs = prev[conversation_id];
             if (!convMsgs) return prev;
-            return { ...prev, [conversation_id]: convMsgs.map(m => m.sender?.id === currentUid ? { ...m, is_read: true } : m) };
+            return {
+              ...prev,
+              [conversation_id]: convMsgs.map(m =>
+                m.sender.id === currentUserId ? { ...m, is_read: true } : m
+              ),
+            };
           });
         }
-        setConversations(prev => prev.map(c =>
-          c.id === conversation_id ? { ...c, unread_count: 0 } : c
-        ));
         break;
       }
       case "presence.status": {
@@ -187,20 +192,23 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         }
         break;
       }
+      case "joined": {
+        // Acknowledged join — no-op
+        break;
+      }
     }
   }, []);
 
-  const { connected, send } = useWebSocket({ onMessage: handleWsMessage });
+  const { connected, send, reconnect } = useWebSocket({ onMessage: handleWsMessage });
 
-  /**
-   * Load conversations via REST API.
-   * Backend response: { message, data: { count, next, previous, total_pages, current_page, results: [...] } }
-   */
+  // ------------------------------------------------------------------
+  // REST API calls (for initial data load only)
+  // ------------------------------------------------------------------
+
   const loadConversations = useCallback(async () => {
     try {
       const res = await fetchAPI("/chat/conversations/");
       const convs = res?.data?.results || res?.results || [];
-      // Sort by most recent message first
       const sorted = (Array.isArray(convs) ? convs : []).sort((a: any, b: any) => {
         const timeA = a.last_message_at || a.updated_at || "";
         const timeB = b.last_message_at || b.updated_at || "";
@@ -221,19 +229,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     } catch { /* failed to load conversations */ }
   }, [showToast]);
 
-  /**
-   * Load messages via REST API.
-   * Backend response (cursor pagination): { message, data: { next, previous, results: [...] } }
-   * Messages are ordered by -created_at (newest first), so we reverse for chronological display.
-   */
   const loadMessages = useCallback(async (convId: string) => {
     try {
       const res = await fetchAPI(`/chat/conversations/${convId}/messages/`);
       const msgs = res?.data?.results || res?.results || [];
       const messageList = Array.isArray(msgs) ? msgs : [];
-      // Backend returns newest-first (cursor pagination with -created_at ordering).
-      // Reverse so oldest is first for chronological display.
-      // Deduplicate by ID to prevent duplicate key errors from optimistic updates
       const reversed = [...messageList].reverse();
       const seen = new Set<string>();
       const deduped = reversed.filter(m => {
@@ -242,77 +242,104 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         return true;
       });
       setMessages(prev => ({ ...prev, [convId]: deduped }));
-      // If WS is available, join the conversation channel
-      if (connected) {
-        send("join_conversation", { conversation_id: convId });
-      }
+      joinedConvsRef.current.add(convId);
     } catch { /* failed to load messages */ }
+
+    // Join conversation group via WS for real-time updates
+    if (connected) {
+      send("join_conversation", { conversation_id: convId });
+    }
   }, [connected, send]);
 
-  /**
-   * Send a message via REST API POST (primary), with WS as bonus for real-time.
-   * Backend expects: POST /chat/conversations/<uuid>/messages/ with body { text: "..." }
-   * Backend returns: { message: "Message sent.", data: { id, sender, text, is_read, created_at } }
-   */
-  const sendMessage = useCallback(async (convId: string, text: string, _opts: any = {}) => {
+  // ------------------------------------------------------------------
+  // Actions — WS primary, REST fallback
+  // ------------------------------------------------------------------
+
+  const sendMessage = useCallback(async (convId: string, text: string) => {
     if (!convId || !text.trim()) return;
+    const trimmed = text.trim();
+    const currentUserId = localStorage.getItem("user_id") || "";
+
+    // Optimistic message
+    const tempId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const optimisticMsg: Message = {
+      id: tempId,
+      sender: { id: currentUserId, full_name: "You", profile_photo: null },
+      text: trimmed,
+      is_read: false,
+      created_at: now,
+    };
+
+    setMessages(prev => ({
+      ...prev,
+      [convId]: [...(prev[convId] || []), optimisticMsg],
+    }));
+    setConversations(prev => prev.map(c =>
+      c.id === convId
+        ? { ...c, last_message_text: trimmed, last_message_at: now, last_message_is_mine: true, updated_at: now }
+        : c
+    ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
+
+    // Try WebSocket first
+    if (connected) {
+      const sent = send("send_message", { conversation_id: convId, text: trimmed });
+      if (sent) {
+        // WS sent — the server will broadcast back via message.sent
+        // Replace temp ID when we get the server response
+        return;
+      }
+    }
+
+    // Fallback to REST
     try {
       const res = await fetchAPI(`/chat/conversations/${convId}/messages/`, {
         method: "POST",
-        body: JSON.stringify({ text: text.trim() }),
+        body: JSON.stringify({ text: trimmed }),
       });
       const msg = res?.data || res;
       if (msg?.id) {
-        // Add the sent message to local state immediately
+        // Replace optimistic message with real one
         setMessages(prev => ({
           ...prev,
-          [convId]: [...(prev[convId] || []), {
-            id: msg.id,
-            sender: msg.sender || { id: localStorage.getItem("user_id") || "", full_name: "You", profile_photo: null },
-            text: msg.text,
-            is_read: msg.is_read ?? false,
-            created_at: msg.created_at,
-          }]
+          [convId]: (prev[convId] || []).map(m =>
+            m.id === tempId
+              ? {
+                  id: msg.id,
+                  sender: msg.sender || optimisticMsg.sender,
+                  text: msg.text,
+                  is_read: msg.is_read ?? false,
+                  created_at: msg.created_at,
+                }
+              : m
+          ),
         }));
-        // Update conversation preview
-        setConversations(prev => prev.map(c =>
-          c.id === convId
-            ? { ...c, last_message_text: msg.text, last_message_at: msg.created_at, last_message_is_mine: true, updated_at: msg.created_at }
-            : c
-        ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
       }
     } catch {
-      // If REST fails, try WS as fallback
-      send("send_message", { conversation_id: convId, content: text.trim() });
+      // Remove optimistic message on failure
+      setMessages(prev => ({
+        ...prev,
+        [convId]: (prev[convId] || []).filter(m => m.id !== tempId),
+      }));
     }
-  }, [send]);
+  }, [connected, send]);
 
-  const editMessage = useCallback((_messageId: string, _text: string) => {
-    // Edit not supported via REST API in this backend; WS-only feature
-    send("edit_message", { message_id: _messageId, content: _text });
-  }, [send]);
-
-  const deleteMessage = useCallback((_messageId: string) => {
-    // Delete not supported via REST API in this backend; WS-only feature
-    send("delete_message", { message_id: _messageId });
-  }, [send]);
-
-  /**
-   * Mark messages as read via REST API POST.
-   * Backend: POST /chat/conversations/<uuid>/messages/mark-read/
-   */
   const markRead = useCallback(async (convId: string) => {
     setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 0 } : c));
+
+    if (connected) {
+      const sent = send("mark_read", { conversation_id: convId });
+      if (sent) return;
+    }
+
+    // Fallback to REST
     try {
       await fetchAPI(`/chat/conversations/${convId}/messages/mark-read/`, {
         method: "POST",
         body: JSON.stringify({}),
       });
-    } catch {
-      // Also try WS
-      send("mark_read", { conversation_id: convId });
-    }
-  }, [send]);
+    } catch { /* ignore */ }
+  }, [connected, send]);
 
   const sendTyping = useCallback((convId: string, isTyping: boolean) => {
     send("typing", { conversation_id: convId, is_typing: isTyping });
@@ -326,11 +353,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     send("leave_conversation", { conversation_id: convId });
   }, [send]);
 
-  /**
-   * Start a new conversation via REST API POST.
-   * Backend: POST /chat/conversations/ with body { user_id: "<uuid>" }
-   * Returns the conversation object.
-   */
   const startConversation = useCallback(async (userId: string): Promise<Conversation | null> => {
     try {
       const res = await fetchAPI("/chat/conversations/", {
@@ -342,33 +364,29 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         await loadConversations();
         return conv;
       }
-    } catch { /* failed to start conversation */ }
+    } catch { /* failed */ }
     return null;
   }, [loadConversations]);
 
-  // Load conversations on mount (independent of WS) and set up polling
+  // ------------------------------------------------------------------
+  // Initial load — REST for conversation list, then WS for real-time
+  // ------------------------------------------------------------------
+
   useEffect(() => {
     loadConversations();
-
-    // Poll conversations every 10 seconds for faster updates
-    pollInterval.current = setInterval(() => {
-      loadConversations();
-    }, 10000);
-
-    return () => {
-      clearInterval(pollInterval.current);
-    };
   }, [loadConversations]);
 
-  // Also reload when WS connects (bonus)
+  // When WS connects/reconnects, reload conversations to sync state
   useEffect(() => {
-    if (connected) loadConversations();
+    if (connected) {
+      loadConversations();
+    }
   }, [connected, loadConversations]);
 
   return (
     <ChatContext.Provider value={{
       conversations, messages, activeConversation, setActiveConversation,
-      sendMessage, editMessage, deleteMessage, markRead, sendTyping,
+      sendMessage, markRead, sendTyping,
       typingUsers, connected, loadConversations, loadMessages, startConversation,
       onlineUsers, getPresence, leaveConversation,
     }}>
