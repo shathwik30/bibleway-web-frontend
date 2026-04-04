@@ -5,8 +5,10 @@ import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchAPI } from "../lib/api";
 import GoogleSignInButton from "../components/GoogleSignInButton";
+import { useTranslation } from "../lib/i18n";
 
 function LoginForm() {
+  const { t } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
   const registered = searchParams.get("registered");
@@ -67,21 +69,21 @@ function LoginForm() {
   return (
     <div className="w-full max-w-md">
       <h1 className="font-headline text-4xl text-on-surface text-center mb-2">
-        Welcome back
+        {t("auth.welcomeBack")}
       </h1>
       <p className="text-on-surface-variant text-center mb-10">
-        Sign in to continue your journey.
+        {t("auth.signInSubtitle")}
       </p>
 
       {registered && (
         <div className="bg-green-500/10 text-green-700 p-4 rounded-xl mb-6 text-sm text-center font-medium">
-          Account verified successfully! Please log in.
+          {t("auth.accountVerified")}
         </div>
       )}
 
       {resetSuccess && (
         <div className="bg-green-500/10 text-green-700 p-4 rounded-xl mb-6 text-sm text-center font-medium">
-          Password reset successfully! Please log in with your new password.
+          {t("auth.resetSuccess")}
         </div>
       )}
 
@@ -94,11 +96,11 @@ function LoginForm() {
       <form className="space-y-6" onSubmit={handleSubmit}>
         <div>
           <label className="text-[10px] uppercase tracking-widest font-bold text-primary mb-2 block">
-            Email
+            {t("auth.email")}
           </label>
           <input
             type="email"
-            placeholder="your@email.com"
+            placeholder={t("auth.emailPlaceholder")}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -108,18 +110,18 @@ function LoginForm() {
         <div>
           <div className="flex justify-between items-center mb-2">
             <label className="text-[10px] uppercase tracking-widest font-bold text-primary">
-              Password
+              {t("auth.password")}
             </label>
             <Link
               href="/forgot-password"
               className="text-xs text-primary hover:underline font-medium"
             >
-              Forgot password?
+              {t("auth.forgotPassword")}
             </Link>
           </div>
           <input
             type="password"
-            placeholder="••••••••"
+            placeholder={t("auth.passwordPlaceholder")}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
@@ -131,19 +133,19 @@ function LoginForm() {
           disabled={loading}
           className="w-full bg-linear-to-br from-primary to-primary-container text-on-primary py-4 rounded-xl font-bold text-sm tracking-widest uppercase shadow-lg shadow-primary/20 hover:opacity-90 transition-all disabled:opacity-50"
         >
-          {loading ? "Signing in..." : "Sign In"}
+          {loading ? t("auth.signingIn") : t("auth.signIn")}
         </button>
       </form>
 
       <GoogleSignInButton />
 
       <p className="mt-10 text-sm text-on-surface-variant text-center">
-        Don&apos;t have an account?{" "}
+        {t("auth.noAccount")}{" "}
         <Link
           href="/register"
           className="text-primary font-bold hover:underline"
         >
-          Create one — it&apos;s free
+          {t("auth.signUpLink")}
         </Link>
       </p>
     </div>
@@ -151,6 +153,7 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   return (
     <div className="min-h-screen bg-surface flex flex-col items-center justify-center px-6">
       {/* Logo */}
@@ -158,7 +161,7 @@ export default function LoginPage() {
         <img src="/bibleway-logo.png" alt="Bibleway" className="h-12 w-auto" />
       </Link>
       
-      <Suspense fallback={<div className="text-on-surface-variant">Loading...</div>}>
+      <Suspense fallback={<div className="text-on-surface-variant">{t("common.loading")}</div>}>
         <LoginForm />
       </Suspense>
     </div>

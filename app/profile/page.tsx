@@ -6,8 +6,10 @@ import MainLayout from "../components/MainLayout";
 import { fetchAPI } from "../lib/api";
 import ImageCropper from "../components/ImageCropper";
 import { useToast } from "../components/Toast";
+import { useTranslation } from "../lib/i18n";
 
 export default function ProfilePage() {
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const [profile, setProfile] = useState<any>(null);
   const [posts, setPosts] = useState<any[]>([]);
@@ -224,8 +226,17 @@ export default function ProfilePage() {
                 posts.map((post) => (
                   <Link href={`/post/${post.id}`} key={post.id} className="bg-surface-container-lowest rounded-xl overflow-hidden shadow-sm group border border-outline-variant/10 hover:shadow-md transition-shadow">
                     {post.media?.[0] && (
-                      <div className="relative h-48 overflow-hidden bg-surface-container">
-                        <img src={post.media[0].file} alt="Post" className="w-full h-full object-cover" />
+                      <div className={`relative overflow-hidden bg-surface-container ${post.media[0].media_type === 'video' ? 'aspect-[9/16]' : 'h-48'}`}>
+                        {post.media[0].media_type === "video" ? (
+                          <video src={post.media[0].file} className="w-full h-full object-cover" muted loop playsInline />
+                        ) : (
+                          <img src={post.media[0].file} alt="Post" className="w-full h-full object-cover" />
+                        )}
+                        {post.media[0].media_type === "video" && (
+                           <div className="absolute top-2 right-2 bg-black/50 p-1 rounded-full text-white flex items-center justify-center pointer-events-none">
+                             <span className="material-symbols-outlined text-sm">play_arrow</span>
+                           </div>
+                        )}
                       </div>
                     )}
                     <div className="p-6">

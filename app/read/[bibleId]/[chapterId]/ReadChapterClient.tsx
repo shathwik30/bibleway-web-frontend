@@ -5,6 +5,7 @@ import Link from "next/link";
 import DOMPurify from "dompurify";
 import GoogleSignInButton from "../../../components/GoogleSignInButton";
 import Footer from "../../../components/Footer";
+import { useTheme } from "../../../lib/ThemeContext";
 
 function sanitizeHTML(html: string): string {
   if (typeof window === "undefined") return html;
@@ -16,6 +17,21 @@ function sanitizeHTML(html: string): string {
     ],
     ALLOWED_ATTR: ["class", "href", "target", "rel"],
   });
+}
+
+function ThemeToggle() {
+  const { resolvedTheme, setTheme } = useTheme();
+  return (
+    <button
+      onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+      className="w-9 h-9 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-all"
+      title={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+    >
+      <span className="material-symbols-outlined text-[20px]">
+        {resolvedTheme === "dark" ? "light_mode" : "dark_mode"}
+      </span>
+    </button>
+  );
 }
 
 const API_BASE_URL =
@@ -31,6 +47,95 @@ interface ChapterData {
   book_name?: string;
   number?: string;
   message?: string;
+}
+
+interface BibleVersion {
+  id: string;
+  name: string;
+  nameLocal?: string;
+  language?: { name: string; nameLocal?: string };
+  description?: string;
+  abbreviation?: string;
+  abbreviationLocal?: string;
+}
+
+/* ---- Bible Showcase Carousel ---- */
+function BibleShowcase() {
+  const [bibles, setBibles] = useState<BibleVersion[]>([]);
+
+  useEffect(() => {
+    async function fetchBibles() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/bible/api-bible/bibles/`);
+        if (!res.ok) return;
+        const json = await res.json();
+        const list = json?.data || json?.results || json || [];
+        setBibles(Array.isArray(list) ? list : []);
+      } catch {
+        /* silent */
+      }
+    }
+    fetchBibles();
+  }, []);
+
+  if (bibles.length === 0) return null;
+
+  // Duplicate for seamless loop
+  const items = [...bibles, ...bibles, ...bibles];
+
+  return (
+    <div className="w-full overflow-hidden py-6">
+      <p className="text-center text-xs font-label uppercase tracking-widest text-on-surface-variant/50 mb-4">
+        Available Bible versions
+      </p>
+      <div className="relative">
+        <div
+          className="flex gap-4 animate-bible-scroll"
+          style={{ width: `${items.length * 220}px` }}
+        >
+          {items.map((bible, i) => (
+            <div
+              key={`${bible.id}-${i}`}
+              className="flex-shrink-0 w-[200px] bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/10 shadow-sm"
+            >
+              <div className="w-10 h-10 rounded-full bg-primary-container/10 flex items-center justify-center mb-3">
+                <span
+                  className="material-symbols-outlined text-primary text-lg"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  menu_book
+                </span>
+              </div>
+              <p className="font-semibold text-on-surface text-sm line-clamp-2 mb-1">
+                {bible.nameLocal || bible.name || bible.abbreviation || "Bible"}
+              </p>
+              <p className="text-xs text-on-surface-variant">
+                {bible.language?.nameLocal || bible.language?.name || ""}
+              </p>
+              {bible.abbreviationLocal && (
+                <span className="inline-block mt-2 text-[10px] font-bold uppercase tracking-wider text-primary/60 bg-primary/5 px-2 py-0.5 rounded-full">
+                  {bible.abbreviationLocal}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <style jsx>{`
+        @keyframes bibleScroll {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-33.333%); }
+        }
+        .animate-bible-scroll {
+          animation: bibleScroll 20s linear infinite;
+        }
+        .animate-bible-scroll:hover {
+          animation-play-state: paused;
+        }
+      `}</style>
+    </div>
+  );
 }
 
 export default function ReadChapterClient({
@@ -66,10 +171,11 @@ export default function ReadChapterClient({
           headers["Authorization"] = `Bearer ${token}`;
         }
 
-        const res = await fetch(
-          `${API_BASE_URL}/bible/api-bible/bibles/${bibleId}/chapters/${chapterId}?content-type=html`,
-          { headers }
-        );
+        const url = bibleId === "study"
+          ? `${API_BASE_URL}/study/pages/${chapterId}/`
+          : `${API_BASE_URL}/bible/api-bible/bibles/${bibleId}/chapters/${chapterId}?content-type=html`;
+
+        const res = await fetch(url, { headers });
 
         if (!res.ok) {
           throw new Error(`Failed to load chapter (${res.status})`);
@@ -88,10 +194,10 @@ export default function ReadChapterClient({
         setChapter({
           id: data.id || chapterId,
           bible_id: data.bibleId || bibleId,
-          reference: data.reference || chapterId,
+          reference: data.reference || data.title || chapterId,
           content: data.content || "",
-          bible_name: data.bible_name || data.bibleName || "",
-          book_name: data.book_name || data.bookName || "",
+          bible_name: data.bible_name || data.bibleName || (bibleId === "study" ? "Bible Study" : ""),
+          book_name: data.book_name || data.bookName || (bibleId === "study" ? "Study Module" : ""),
           number: data.number || "",
           message: previewMessage,
         });
@@ -119,55 +225,42 @@ export default function ReadChapterClient({
 
   return (
     <>
-      {/* Minimal top navigation */}
+      {/* Minimal top navigation — no sidebar, no bottom nav */}
       <nav className="bg-surface/80 backdrop-blur-xl sticky top-0 z-50 border-b border-outline-variant/10">
         <div className="flex justify-between items-center w-full px-6 py-4 max-w-7xl mx-auto">
-          <Link href="/" className="block">
+          <Link href={isAuthenticated ? "/" : "/login"} className="block">
             <img
               src="/bibleway-logo.png"
               alt="Bibleway"
               className="h-8 w-auto"
             />
           </Link>
-          <div className="hidden md:flex items-center space-x-8">
-            <Link
-              href="/"
-              className="text-on-surface-variant hover:text-primary transition-colors font-medium"
-            >
-              Daily Verse
-            </Link>
-            <Link
-              href="/bible"
-              className="text-primary border-b-2 border-tertiary-fixed-dim font-medium"
-            >
-              Bible
-            </Link>
-            <Link
-              href="/shop"
-              className="text-on-surface-variant hover:text-primary transition-colors font-medium"
-            >
-              Shop
-            </Link>
-          </div>
-          <div className="flex items-center space-x-3">
-            {!isAuthenticated && (
-              <Link
-                href="/login"
-                className="hidden sm:inline-flex items-center px-5 py-2 text-sm font-semibold text-primary border border-primary/30 rounded-full hover:bg-primary/5 transition-colors"
-              >
-                Sign in
-              </Link>
-            )}
-            {isAuthenticated && (
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            {isAuthenticated ? (
               <Link
                 href="/bible"
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-on-surface-variant hover:text-primary transition-colors"
               >
-                <span className="material-symbols-outlined text-lg">
-                  menu_book
-                </span>
-                Bible Reader
+                <span className="material-symbols-outlined text-lg">menu_book</span>
+                <span className="hidden sm:inline">Bible Reader</span>
               </Link>
+            ) : (
+              <>
+                <Link
+                  href="/landing"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-on-surface-variant hover:text-primary transition-colors"
+                >
+                  <span className="material-symbols-outlined text-lg">home</span>
+                  <span className="hidden sm:inline">Home</span>
+                </Link>
+                <Link
+                  href="/login"
+                  className="inline-flex items-center px-5 py-2 text-sm font-semibold text-primary border border-primary/30 rounded-full hover:bg-primary/5 transition-colors"
+                >
+                  Sign in
+                </Link>
+              </>
             )}
           </div>
         </div>
@@ -222,20 +315,22 @@ export default function ReadChapterClient({
           {/* Divider */}
           <div className="w-16 h-px bg-primary/30 mb-12" />
 
-          {/* Content area */}
+          {/* Content area — show all content the backend sends, no frontend truncation */}
           <div
             className={`relative ${isPreview ? "pb-0" : "pb-24"}`}
           >
             <div
-              className="prose prose-stone prose-lg max-w-none text-on-surface leading-[1.85] text-[1.125rem]
-                [&_p]:mb-6 [&_p]:text-on-surface/90
-                [&_span.v]:text-primary/60 [&_span.v]:text-xs [&_span.v]:font-bold [&_span.v]:align-super [&_span.v]:mr-1
-                [&_h3]:text-2xl [&_h3]:font-headline [&_h3]:mt-8 [&_h3]:mb-4
-                [&_h4]:text-xl [&_h4]:font-headline [&_h4]:mt-6 [&_h4]:mb-3
-                [&_blockquote]:border-l-4 [&_blockquote]:border-tertiary-fixed-dim [&_blockquote]:pl-6
-                [&_blockquote]:my-6 [&_blockquote]:bg-primary/5 [&_blockquote]:rounded-r-lg [&_blockquote]:italic"
+              className={`prose prose-stone prose-lg max-w-none leading-[1.85] text-[1.125rem]
+                ${bibleId === "study"
+                  ? "[&>p]:mb-5 [&>p]:pl-4 [&_blockquote]:border-l-4 [&_blockquote]:border-primary/30 [&_blockquote]:pl-6 [&_blockquote]:py-3 [&_blockquote]:my-6 [&_blockquote]:bg-primary/5 [&_blockquote]:rounded-r-lg [&_blockquote]:italic [&_h1]:text-3xl [&_h1]:font-headline [&_h1]:mt-8 [&_h1]:mb-4 [&_h2]:text-2xl [&_h2]:font-headline [&_h2]:mt-8 [&_h2]:mb-4 [&_h3]:text-xl [&_h3]:font-headline [&_h3]:mt-6 [&_h3]:mb-3 [&_ul]:pl-8 [&_ul]:space-y-2 [&_ol]:pl-8 [&_ol]:space-y-2 [&_strong]:text-on-surface [&_strong]:font-bold [&_em]:italic text-on-surface-variant"
+                  : "text-on-surface [&_p]:mb-6 [&_p]:text-on-surface/90 [&_span.v]:text-primary/60 [&_span.v]:text-xs [&_span.v]:font-bold [&_span.v]:align-super [&_span.v]:mr-1 [&_h3]:text-2xl [&_h3]:font-headline [&_h3]:mt-8 [&_h3]:mb-4 [&_h4]:text-xl [&_h4]:font-headline [&_h4]:mt-6 [&_h4]:mb-3 [&_blockquote]:border-l-4 [&_blockquote]:border-tertiary-fixed-dim [&_blockquote]:pl-6 [&_blockquote]:my-6 [&_blockquote]:bg-primary/5 [&_blockquote]:rounded-r-lg [&_blockquote]:italic"
+                }`}
               dangerouslySetInnerHTML={{
-                __html: sanitizeHTML(chapter.content),
+                __html: sanitizeHTML(
+                  bibleId === "study" && typeof window !== "undefined"
+                    ? (require("marked").marked(chapter.content) || "")
+                    : chapter.content
+                ),
               }}
             />
 
@@ -248,7 +343,12 @@ export default function ReadChapterClient({
 
         {/* Gated sign-up CTA */}
         {isPreview && (
-          <div className="relative z-10 -mt-8 pb-24">
+          <div className="relative z-10 -mt-8 pb-12">
+            {/* Bible showcase carousel */}
+            <div className="max-w-3xl mx-auto px-6 mb-8">
+              <BibleShowcase />
+            </div>
+
             <div className="max-w-xl mx-auto px-6">
               <div className="bg-surface-container-lowest rounded-2xl p-10 editorial-shadow flex flex-col items-center text-center border border-outline-variant/10">
                 {/* Lock icon */}
@@ -346,19 +446,14 @@ export default function ReadChapterClient({
   );
 }
 
-/* ─── Loading skeleton ──────────────────────────────────────── */
+/* --- Loading skeleton --- */
 function LoadingSkeleton() {
   return (
     <>
       <nav className="bg-surface/80 backdrop-blur-xl sticky top-0 z-50 border-b border-outline-variant/10">
         <div className="flex justify-between items-center w-full px-6 py-4 max-w-7xl mx-auto">
           <div className="h-8 w-28 rounded bg-surface-container-high animate-pulse" />
-          <div className="hidden md:flex items-center space-x-8">
-            <div className="h-4 w-20 rounded bg-surface-container-high animate-pulse" />
-            <div className="h-4 w-16 rounded bg-surface-container-high animate-pulse" />
-            <div className="h-4 w-16 rounded bg-surface-container-high animate-pulse" />
-          </div>
-          <div className="h-8 w-8 rounded-full bg-surface-container-high animate-pulse" />
+          <div className="h-8 w-20 rounded-full bg-surface-container-high animate-pulse" />
         </div>
       </nav>
       <main className="max-w-3xl mx-auto px-6 pt-16 pb-24">
@@ -389,13 +484,13 @@ function LoadingSkeleton() {
   );
 }
 
-/* ─── Error state ───────────────────────────────────────────── */
+/* --- Error state --- */
 function ErrorState({ message }: { message: string }) {
   return (
     <>
       <nav className="bg-surface/80 backdrop-blur-xl sticky top-0 z-50 border-b border-outline-variant/10">
         <div className="flex justify-between items-center w-full px-6 py-4 max-w-7xl mx-auto">
-          <Link href="/" className="block">
+          <Link href="/login" className="block">
             <img
               src="/bibleway-logo.png"
               alt="Bibleway"
@@ -416,11 +511,11 @@ function ErrorState({ message }: { message: string }) {
         </h1>
         <p className="text-on-surface-variant mb-8">{message}</p>
         <Link
-          href="/bible"
+          href="/login"
           className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-full font-medium hover:opacity-90 transition-opacity"
         >
-          <span className="material-symbols-outlined text-lg">menu_book</span>
-          Go to Bible Reader
+          <span className="material-symbols-outlined text-lg">login</span>
+          Sign In
         </Link>
       </main>
     </>

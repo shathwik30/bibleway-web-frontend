@@ -5,6 +5,7 @@ import Link from "next/link";
 import NotificationDropdown from "./NotificationDropdown";
 import GlobalSearch from "./GlobalSearch";
 import { fetchAPI } from "../lib/api";
+import { useTranslation } from "../lib/i18n";
 
 interface NavbarProps {
   sidebarCollapsed?: boolean;
@@ -14,6 +15,7 @@ interface NavbarProps {
 const ICON_BTN = "w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-all duration-200";
 
 export default function Navbar({ sidebarCollapsed, onToggleSidebar }: NavbarProps) {
+  const { t } = useTranslation();
   const [profileOpen, setProfileOpen] = useState(false);
   const [user, setUser] = useState<{ full_name?: string; profile_photo?: string; follower_count?: number; following_count?: number } | null>(null);
   const profileRef = useRef<HTMLDivElement>(null);

@@ -5,8 +5,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { fetchAPI } from "../lib/api";
 import GoogleSignInButton from "../components/GoogleSignInButton";
+import { useTranslation } from "../lib/i18n";
 
 export default function RegisterPage() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

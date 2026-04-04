@@ -11,10 +11,11 @@ type Props = {
 
 async function fetchPreview(bibleId: string, chapterId: string) {
   try {
-    const res = await fetch(
-      `${API_BASE_URL}/bible/api-bible/bibles/${bibleId}/chapters/${chapterId}?content-type=html`,
-      { next: { revalidate: 3600 } }
-    );
+    const url = bibleId === "study" 
+      ? `${API_BASE_URL}/study/pages/${chapterId}/`
+      : `${API_BASE_URL}/bible/api-bible/bibles/${bibleId}/chapters/${chapterId}?content-type=html`;
+      
+    const res = await fetch(url, { next: { revalidate: 3600 } });
     if (!res.ok) return null;
     return res.json();
   } catch {
@@ -27,21 +28,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const data = await fetchPreview(bibleId, chapterId);
   const chapter = data?.data;
 
-  const title = chapter?.reference
-    ? `${chapter.reference} — Bibleway`
+  const title = chapter?.reference || chapter?.title
+    ? `${chapter.reference || chapter.title} — Bibleway`
     : `Read — Bibleway`;
 
   const description = chapter?.content
     ? chapter.content.replace(/<[^>]*>/g, "").slice(0, 160) + "..."
     : "Read the Bible on Bibleway. Join a community exploring scripture together.";
 
-  const bibleName = chapter?.bible_name || "";
+  const bibleName = chapter?.bible_name || chapter?.title || "";
 
   return {
     title,
     description,
     openGraph: {
-      title: chapter?.reference || "Bible Reading",
+      title: chapter?.reference || chapter?.title || "Bible Reading",
       description,
       siteName: "Bibleway",
       type: "article",

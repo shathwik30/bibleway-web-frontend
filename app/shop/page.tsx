@@ -5,8 +5,10 @@ import Link from "next/link";
 import MainLayout from "../components/MainLayout";
 import { fetchAPI } from "../lib/api";
 import Shimmer from "../components/Shimmer";
+import { useTranslation } from "../lib/i18n";
 
 export default function ShopPage() {
+  const { t } = useTranslation();
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");

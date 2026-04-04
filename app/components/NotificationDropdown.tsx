@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { fetchAPI } from "../lib/api";
+import { useTranslation } from "../lib/i18n";
 
 function getNotificationLink(n: any): string | null {
   const data = n.data || {};
@@ -26,6 +27,7 @@ function getNotificationLink(n: any): string | null {
 }
 
 export default function NotificationDropdown() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);

@@ -10,7 +10,7 @@ import Shimmer from "../components/Shimmer";
 import BibleStudyTools from "../components/BibleStudyTools";
 import TTSControls from "../components/TTSControls";
 import YouTubeSermons from "../components/YouTubeSermons";
-import { useBibles, useBooks, useChapters, useChapterContent, useStudySections, useStudyChapters, useStudyPages, useStudyPageDetail, useBookmarks, useNotes, useAddBookmark, useRemoveBookmark, useAddNote, useRemoveNote, useUpdateNote, useBibleSearch, useApiBibleSearch } from "../lib/hooks";
+import { useBibles, useBooks, useChapters, useChapterContent, useStudySections, useStudyChapters, useStudyPages, useStudyPageDetail, useBookmarks, useAddBookmark, useRemoveBookmark, useNotes, useAddNote, useRemoveNote, useUpdateNote, useHighlights, useAddHighlight, useRemoveHighlight, useBibleSearch, useApiBibleSearch } from "../lib/hooks";
 import { translateText, LANGUAGES, DEFAULT_LANGUAGE, type Language } from "../lib/translate";
 import { useToast } from "../components/Toast";
 
@@ -150,35 +150,7 @@ type StudyStep = "pick-section" | "pick-module" | "reading";
 
 type TabKey = "standard" | "study" | "bookmarks" | "notes";
 
-// ─── LocalStorage helpers for highlight selected_text ────────────
-function getHighlightTextMap(): Record<string, string> {
-  if (typeof window === "undefined") return {};
-  try {
-    return JSON.parse(localStorage.getItem("highlight_text_map") || "{}");
-  } catch { return {}; }
-}
-
-function saveHighlightText(highlightId: string, text: string) {
-  if (typeof window === "undefined") return;
-  const map = getHighlightTextMap();
-  map[highlightId] = text;
-  localStorage.setItem("highlight_text_map", JSON.stringify(map));
-}
-
-function removeHighlightText(highlightId: string) {
-  if (typeof window === "undefined") return;
-  const map = getHighlightTextMap();
-  delete map[highlightId];
-  localStorage.setItem("highlight_text_map", JSON.stringify(map));
-}
-
-function enrichHighlightsWithText(highlights: any[]): any[] {
-  const map = getHighlightTextMap();
-  return highlights.map((hl) => ({
-    ...hl,
-    selected_text: hl.selected_text || map[hl.id] || "",
-  }));
-}
+// (Local text mappings are not needed if we use global React Query hooks)
 
 function BibleContent() {
   const { showToast } = useToast();
@@ -320,7 +292,7 @@ function BibleContent() {
     if (currentChapterBookmarked && currentBookmarkId) {
       removeBookmarkMut.mutate(currentBookmarkId);
     } else {
-      addBookmarkMut.mutate(selectedChapterId);
+      addBookmarkMut.mutate({ bookmark_type: "api_bible", verse_reference: selectedChapterId });
     }
   }
 
@@ -338,7 +310,7 @@ function BibleContent() {
   function handleAddNote() {
     if (!newNoteText.trim() || !selectedChapterId) return;
     addNoteMut.mutate(
-      { verse_reference: selectedChapterId, text: newNoteText.trim() },
+      { note_type: "api_bible", verse_reference: selectedChapterId, text: newNoteText.trim() },
       { onSuccess: () => setNewNoteText("") }
     );
   }
@@ -369,26 +341,35 @@ function BibleContent() {
   }, [inlineSearchOpen]);
 
   // ─── Highlight state for visual rendering ───────────────────
-  const [activeHighlights, setActiveHighlights] = useState<any[]>([]);
-  const [selectionPopup, setSelectionPopup] = useState<{ text: string; x: number; y: number } | null>(null);
+  // We sync directly with the global React Query hook rather than local state.
+  const { data: globalHighlights = [] } = useHighlights();
+  const addHighlightMut = useAddHighlight();
+  const removeHighlightMut = useRemoveHighlight();
+
+  const [selectionPopup, setSelectionPopup] = useState<{ text: string; x: number; y: number; start: number; end: number } | null>(null);
   const [popupColor, setPopupColor] = useState("yellow");
   const articleRef = React.useRef<HTMLDivElement>(null);
 
-  // Listen for text selection inside the bible article
+  // Listen for text selection inside the bible article or study section
   React.useEffect(() => {
     function handleMouseUp() {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-        // Delay clearing so click on popup buttons registers
         setTimeout(() => setSelectionPopup(null), 200);
         return;
       }
-      // Only capture selections inside the article
-      if (articleRef.current && articleRef.current.contains(sel.anchorNode)) {
+      
+      // Capture from any prose container (standard reader or study pages)
+      const isInsideArticle = articleRef.current && articleRef.current.contains(sel.anchorNode);
+      const isInsideStudy = document.querySelector(".study-content-article")?.contains(sel.anchorNode as Node);
+      
+      if (isInsideArticle || isInsideStudy) {
         const range = sel.getRangeAt(0);
         const rect = range.getBoundingClientRect();
         setSelectionPopup({
           text: sel.toString().trim(),
+          start: range.startOffset,
+          end: range.endOffset,
           x: rect.left + rect.width / 2,
           y: rect.top - 10,
         });
@@ -396,39 +377,42 @@ function BibleContent() {
     }
     document.addEventListener("mouseup", handleMouseUp);
     return () => document.removeEventListener("mouseup", handleMouseUp);
-  }, []);
+  }, [activeTab]);
 
-  async function handleHighlightSelection(color: string) {
-    if (!selectionPopup || !selectedChapterId) return;
-    const selectedText = selectionPopup.text;
-    try {
-      const res = await fetchAPI("/bible/highlights/", {
-        method: "POST",
-        body: JSON.stringify({
-          highlight_type: "api_bible",
-          verse_reference: selectedChapterId,
-          color,
-        }),
+  function handleHighlightSelection(color: string) {
+    if (!selectionPopup) return;
+    const { text, start, end } = selectionPopup;
+
+    if (activeTab === "standard" && selectedChapterId) {
+      addHighlightMut.mutate({
+        highlight_type: "api_bible",
+        verse_reference: selectedChapterId,
+        color,
       });
-      const newHl = res.data || res;
-      // Backend doesn't store selected_text, so persist it in localStorage
-      if (newHl.id) {
-        saveHighlightText(newHl.id, selectedText);
-      }
-      newHl.selected_text = selectedText;
-      setActiveHighlights((prev) => [...prev, newHl]);
-      setSelectionPopup(null);
-      window.getSelection()?.removeAllRanges();
-    } catch (err: any) {
-      showToast("error", "Highlight Failed", err.message || "Failed to highlight.");
+    } else if (activeTab === "study" && selectedPageId) {
+      addHighlightMut.mutate({
+        highlight_type: "segregated",
+        content_type: 21,
+        object_id: selectedPageId,
+        selection_start: start,
+        selection_end: end,
+        color,
+      });
     }
+    
+    setSelectionPopup(null);
+    window.getSelection()?.removeAllRanges();
+  }
+
+  function handleRemoveHighlight(id: string) {
+    removeHighlightMut.mutate(id);
   }
 
   // Apply highlights to HTML content by wrapping matched text in <mark>
   function applyHighlightsToContent(html: string): string {
     if (!html) return html;
-    const chapterHighlights = activeHighlights.filter(
-      (hl) => hl.verse_reference === selectedChapterId && hl.selected_text
+    const chapterHighlights = globalHighlights.filter(
+      (hl: any) => hl.verse_reference === selectedChapterId
     );
     if (chapterHighlights.length === 0) return html;
 
@@ -767,12 +751,10 @@ function BibleContent() {
                     </div>
                   </div>
 
-                  {/* Study Tools */}
                   <BibleStudyTools
                     selectedBibleId={selectedBible?.id || ""}
                     selectedChapterId={selectedChapterId}
                     onNavigateToChapter={(chId) => handleSwitchChapter(chId)}
-                    onHighlightsChange={setActiveHighlights}
                   />
                 </aside>
 

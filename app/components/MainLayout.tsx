@@ -5,6 +5,7 @@ import Navbar from "./Navbar";
 import Sidebar from "./Sidebar";
 import BottomNav from "./BottomNav";
 import Footer from "./Footer";
+import AuthGuard from "./AuthGuard";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -27,23 +28,25 @@ export default function MainLayout({
   }, [sidebarCollapsed]);
 
   return (
-    <div className="overflow-x-hidden">
-      <Navbar
-        sidebarCollapsed={sidebarCollapsed}
-        onToggleSidebar={() => setSidebarCollapsed((c) => !c)}
-      />
-      {/* Spacer for fixed navbar height */}
-      <div className="h-16" />
-      <div className="flex min-h-[calc(100vh-4rem)]">
-        <Sidebar collapsed={sidebarCollapsed} />
-        <div className="flex-1 min-w-0 flex flex-col">
-          <main className={`flex-1 ${hideFooter ? "" : "pb-24 md:pb-0"}`} data-page>
-            {children}
-          </main>
-          {!hideFooter && <Footer />}
+    <AuthGuard>
+      <div className="overflow-x-hidden">
+        <Navbar
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={() => setSidebarCollapsed((c) => !c)}
+        />
+        {/* Spacer for fixed navbar height */}
+        <div className="h-16" />
+        <div className="flex min-h-[calc(100vh-4rem)]">
+          <Sidebar collapsed={sidebarCollapsed} />
+          <div className="flex-1 min-w-0 flex flex-col">
+            <main className={`flex-1 ${hideFooter ? "" : "pb-24 md:pb-0"}`} data-page>
+              {children}
+            </main>
+            {!hideFooter && <Footer />}
+          </div>
         </div>
+        <BottomNav />
       </div>
-      <BottomNav />
-    </div>
+    </AuthGuard>
   );
 }

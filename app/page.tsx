@@ -465,14 +465,14 @@ export default function HomePage() {
 
           {/* Feed Tabs */}
           <div className="flex items-center justify-between gap-4">
-            <div className="flex space-x-6 sm:space-x-10">
+            <div className="flex items-center justify-center gap-6 sm:gap-10 flex-1 md:flex-none">
               <button onClick={() => setActiveTab("post")} className={`pb-2 border-b-2 transition-all font-medium tracking-wide ${activeTab === "post" ? "border-primary text-primary" : "border-transparent text-on-surface-variant hover:text-primary"}`}>{t("feed.posts")}</button>
               <button onClick={() => setActiveTab("prayer")} className={`pb-2 border-b-2 transition-all font-medium tracking-wide ${activeTab === "prayer" ? "border-primary text-primary" : "border-transparent text-on-surface-variant hover:text-primary"}`}>{t("feed.prayers")}</button>
             </div>
             {isLoggedIn && (
-              <button onClick={() => setShowPostingModal(true)} className="bg-primary text-on-primary px-4 sm:px-6 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 hover:opacity-90 transition-all shadow-lg shadow-primary/20 shrink-0">
+              <button onClick={() => setShowPostingModal(true)} className="hidden md:flex bg-primary text-on-primary px-6 py-2.5 rounded-xl font-semibold text-sm items-center gap-2 hover:opacity-90 transition-all shadow-lg shadow-primary/20 shrink-0">
                 <span className="material-symbols-outlined text-lg">add</span>
-                <span className="hidden sm:inline">{activeTab === "post" ? t("feed.createPost") : t("feed.createPrayer")}</span>
+                {activeTab === "post" ? t("feed.createPost") : t("feed.createPrayer")}
               </button>
             )}
           </div>
@@ -621,6 +621,17 @@ export default function HomePage() {
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-on-surface text-surface px-6 py-3 rounded-full shadow-xl z-[20000] text-sm font-medium animate-in fade-in slide-in-from-bottom-2 duration-200">
           {toast}
         </div>,
+        document.body
+      )}
+      {/* Floating Action Button for creating posts — portaled to escape overflow */}
+      {isLoggedIn && typeof document !== "undefined" && createPortal(
+        <button
+          onClick={() => setShowPostingModal(true)}
+          className="md:hidden fixed bottom-28 right-4 w-14 h-14 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-xl shadow-primary/30 hover:opacity-90 active:scale-95 transition-all z-[100] press-effect"
+          aria-label="Create post"
+        >
+          <span className="material-symbols-outlined text-[28px]">add</span>
+        </button>,
         document.body
       )}
     </MainLayout>

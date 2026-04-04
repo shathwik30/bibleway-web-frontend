@@ -5,37 +5,17 @@ import { fetchAPI } from "../lib/api";
 import { formatVerseRef } from "../bible/page";
 import { useToast } from "./Toast";
 
-// Helper to enrich highlights with locally-stored selected_text
-function getHighlightTextMap(): Record<string, string> {
-  if (typeof window === "undefined") return {};
-  try {
-    return JSON.parse(localStorage.getItem("highlight_text_map") || "{}");
-  } catch { return {}; }
-}
+import { useBookmarks, useAddBookmark, useRemoveBookmark, useHighlights, useRemoveHighlight, useNotes, useAddNote, useRemoveNote } from "../lib/hooks";
 
-function removeHighlightTextEntry(highlightId: string) {
-  if (typeof window === "undefined") return;
-  const map = getHighlightTextMap();
-  delete map[highlightId];
-  localStorage.setItem("highlight_text_map", JSON.stringify(map));
-}
-
-function enrichHighlights(highlights: any[]): any[] {
-  const map = getHighlightTextMap();
-  return highlights.map((hl) => ({
-    ...hl,
-    selected_text: hl.selected_text || map[hl.id] || "",
-  }));
-}
-
+// Hook definitions replace local states
 interface BibleStudyToolsProps {
   selectedBibleId: string;
   selectedChapterId: string;
   onNavigateToChapter?: (chapterId: string) => void;
-  onHighlightsChange?: (highlights: any[]) => void;
+  // onHighlightsChange is removed/deprecated since page.tsx will use useHighlights() directly
 }
 
-export default function BibleStudyTools({ selectedBibleId, selectedChapterId, onNavigateToChapter, onHighlightsChange }: BibleStudyToolsProps) {
+export default function BibleStudyTools({ selectedBibleId, selectedChapterId, onNavigateToChapter }: BibleStudyToolsProps) {
   const { showToast } = useToast();
   const [activePanel, setActivePanel] = useState<"search" | "bookmarks" | "highlights" | "notes" | null>(null);
 
@@ -44,22 +24,20 @@ export default function BibleStudyTools({ selectedBibleId, selectedChapterId, on
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
 
-  // Bookmarks
-  const [bookmarks, setBookmarks] = useState<any[]>([]);
-  const [bookmarksLoaded, setBookmarksLoaded] = useState(false);
-  const [bookmarksLoading, setBookmarksLoading] = useState(false);
+  // Query Hooks
+  const { data: bookmarks = [], isLoading: bookmarksLoading } = useBookmarks();
+  const { data: highlights = [], isLoading: highlightsLoading } = useHighlights();
+  const { data: notes = [], isLoading: notesLoading } = useNotes();
 
-  // Highlights
-  const [highlights, setHighlights] = useState<any[]>([]);
-  const [highlightsLoaded, setHighlightsLoaded] = useState(false);
-  const [highlightsLoading, setHighlightsLoading] = useState(false);
+  // Mutation Hooks
+  const addBookmarkMut = useAddBookmark();
+  const removeBookmarkMut = useRemoveBookmark();
+  const removeHighlightMut = useRemoveHighlight();
+  const addNoteMut = useAddNote();
+  const removeNoteMut = useRemoveNote();
 
-  // Notes
-  const [notes, setNotes] = useState<any[]>([]);
-  const [notesLoaded, setNotesLoaded] = useState(false);
-  const [notesLoading, setNotesLoading] = useState(false);
   const [newNoteText, setNewNoteText] = useState("");
-  const [addingNote, setAddingNote] = useState(false);
+
 
   // Highlight color (used by parent for text-selection highlighting)
 
@@ -68,7 +46,6 @@ export default function BibleStudyTools({ selectedBibleId, selectedChapterId, on
     if (!searchQuery.trim()) return;
     setSearching(true);
     try {
-      // Search endpoint searches segregated pages (study content)
       const res = await fetchAPI(`/bible/search/?q=${encodeURIComponent(searchQuery)}`);
       setSearchResults(res?.data?.results || res?.results || res?.data || []);
     } catch { /* error */ } finally {
@@ -76,110 +53,39 @@ export default function BibleStudyTools({ selectedBibleId, selectedChapterId, on
     }
   }
 
-  async function loadBookmarks() {
-    if (bookmarksLoaded) return;
-    setBookmarksLoading(true);
-    try {
-      const res = await fetchAPI("/bible/bookmarks/?type=api_bible");
-      setBookmarks(res?.data?.results || res?.results || res?.data || []);
-      setBookmarksLoaded(true);
-    } catch { /* error */ } finally {
-      setBookmarksLoading(false);
-    }
-  }
-
-  async function addBookmark() {
+  function addBookmark() {
     if (!selectedChapterId) return;
-    // Check if already bookmarked
-    const exists = bookmarks.some((bm) => bm.verse_reference === selectedChapterId);
+    const exists = bookmarks.some((bm: any) => bm.verse_reference === selectedChapterId);
     if (exists) return;
-    try {
-      const res = await fetchAPI("/bible/bookmarks/", {
-        method: "POST",
-        body: JSON.stringify({ bookmark_type: "api_bible", verse_reference: selectedChapterId }),
-      });
-      const newBm = res.data || res;
-      setBookmarks((prev) => [newBm, ...prev]);
-    } catch (err: any) {
-      showToast("error", "Bookmark Failed", err.message || "Failed to bookmark.");
-    }
+    addBookmarkMut.mutate({ 
+      bookmark_type: "api_bible", 
+      verse_reference: selectedChapterId 
+    });
   }
 
-  async function removeBookmark(id: string) {
-    try {
-      await fetchAPI(`/bible/bookmarks/${id}/`, { method: "DELETE" });
-      setBookmarks((prev) => prev.filter((bm) => bm.id !== id));
-    } catch { /* error */ }
+  function removeBookmark(id: string) {
+    removeBookmarkMut.mutate(id);
   }
 
-  async function loadHighlights() {
-    if (highlightsLoaded) return;
-    setHighlightsLoading(true);
-    try {
-      const res = await fetchAPI("/bible/highlights/?type=api_bible");
-      const raw = res?.data?.results || res?.results || res?.data || [];
-      const data = enrichHighlights(raw);
-      setHighlights(data);
-      setHighlightsLoaded(true);
-      onHighlightsChange?.(data);
-    } catch { /* error */ } finally {
-      setHighlightsLoading(false);
-    }
+  function removeHighlight(id: string) {
+    removeHighlightMut.mutate(id);
   }
 
-  async function removeHighlight(id: string) {
-    try {
-      await fetchAPI(`/bible/highlights/${id}/`, { method: "DELETE" });
-      removeHighlightTextEntry(id);
-      const updated = highlights.filter((hl) => hl.id !== id);
-      setHighlights(updated);
-      onHighlightsChange?.(updated);
-    } catch { /* error */ }
+  function addNote() {
+    if (!newNoteText.trim() || addNoteMut.isPending || !selectedChapterId) return;
+    addNoteMut.mutate(
+      { note_type: "api_bible", verse_reference: selectedChapterId, text: newNoteText.trim() },
+      { onSuccess: () => setNewNoteText("") }
+    );
   }
 
-  async function loadNotes() {
-    if (notesLoaded) return;
-    setNotesLoading(true);
-    try {
-      const res = await fetchAPI("/bible/notes/?type=api_bible");
-      setNotes(res?.data?.results || res?.results || res?.data || []);
-      setNotesLoaded(true);
-    } catch { /* error */ } finally {
-      setNotesLoading(false);
-    }
-  }
-
-  async function addNote() {
-    if (!newNoteText.trim() || addingNote || !selectedChapterId) return;
-    setAddingNote(true);
-    try {
-      const res = await fetchAPI("/bible/notes/", {
-        method: "POST",
-        body: JSON.stringify({ note_type: "api_bible", verse_reference: selectedChapterId, text: newNoteText.trim() }),
-      });
-      const newN = res.data || res;
-      setNotes((prev) => [newN, ...prev]);
-      setNewNoteText("");
-    } catch (err: any) {
-      showToast("error", "Note Failed", err.message || "Failed to add note.");
-    } finally {
-      setAddingNote(false);
-    }
-  }
-
-  async function removeNote(id: string) {
-    try {
-      await fetchAPI(`/bible/notes/${id}/`, { method: "DELETE" });
-      setNotes((prev) => prev.filter((n) => n.id !== id));
-    } catch { /* error */ }
+  function removeNote(id: string) {
+    removeNoteMut.mutate(id);
   }
 
   function togglePanel(panel: typeof activePanel) {
     if (activePanel === panel) { setActivePanel(null); return; }
     setActivePanel(panel);
-    if (panel === "bookmarks") loadBookmarks();
-    if (panel === "highlights") loadHighlights();
-    if (panel === "notes") loadNotes();
   }
 
   const isBookmarked = bookmarks.some((bm) => bm.verse_reference === selectedChapterId);
@@ -310,11 +216,11 @@ export default function BibleStudyTools({ selectedBibleId, selectedChapterId, on
           <label className="text-[10px] uppercase tracking-widest font-bold text-primary block mb-2">Notes</label>
           <div className="flex gap-2 mb-3">
             <input type="text" placeholder="Add a note for this chapter..." value={newNoteText} onChange={(e) => setNewNoteText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} className="flex-1 bg-surface-container-high border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary/40" />
-            <button onClick={addNote} disabled={addingNote || !newNoteText.trim()} className="bg-primary text-on-primary px-3 py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
-              {addingNote ? "..." : "Add"}
+            <button onClick={addNote} disabled={addNoteMut.isPending || !newNoteText.trim()} className="bg-primary text-on-primary px-3 py-2 rounded-lg text-sm font-semibold disabled:opacity-50">
+              {addNoteMut.isPending ? "..." : "Add"}
             </button>
           </div>
-          <div className="max-h-48 overflow-y-auto space-y-2">
+          <div className="max-h-48 overflow-y-auto space-y-1">
             {notesLoading ? (
               <div className="flex justify-center py-4"><div className="animate-spin rounded-full h-4 w-4 border-t-2 border-primary"></div></div>
             ) : notes.length > 0 ? notes.map((note: any) => (

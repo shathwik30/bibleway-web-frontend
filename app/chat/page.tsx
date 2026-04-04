@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import MainLayout from "../components/MainLayout";
 import { useChat } from "../lib/ChatContext";
+import { useTranslation } from "../lib/i18n";
 
 export default function ChatPage() {
+  const { t } = useTranslation();
   const { conversations, loadConversations, markRead, onlineUsers, connected } = useChat();
   const [searchQuery, setSearchQuery] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);

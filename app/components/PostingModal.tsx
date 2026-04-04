@@ -27,7 +27,7 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
   });
   const [posting, setPosting] = useState(false);
   const [mediaPreviews, setMediaPreviews] = useState<string[]>([]);
-  const [mediaKeys, setMediaKeys] = useState<string[]>([]);
+  const [mediaFiles, setMediaFiles] = useState<File[]>([]);
   const [mediaTypes, setMediaTypes] = useState<string[]>([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -49,74 +49,60 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
     const selected = Array.from(files).slice(0, remaining);
     if (selected.length === 0) return;
 
-    uploadFiles(selected);
-  }
-
-  async function uploadFiles(files: File[]) {
-    setUploadingMedia(true);
-    const newPreviews = files.map((f) => URL.createObjectURL(f));
+    const newPreviews = selected.map((f) => URL.createObjectURL(f));
+    const newTypes = selected.map((f) => f.type.startsWith("video/") ? "video" : "image");
     setMediaPreviews((prev) => [...prev, ...newPreviews]);
-
-    try {
-      const formData = new FormData();
-      files.forEach((file) => formData.append("files", file));
-      const res = await fetchAPI("/social/media/upload/", { method: "POST", body: formData });
-      const results: { key: string; url: string }[] = res.data || res || [];
-      const newKeys = results.map((r) => r.key);
-      const newTypes = files.map((f) => f.type.startsWith("video/") ? "video" : "image");
-      setMediaKeys((prev) => [...prev, ...newKeys]);
-      setMediaTypes((prev) => [...prev, ...newTypes]);
-    } catch {
-      setMediaPreviews((prev) => prev.slice(0, prev.length - newPreviews.length));
-    } finally {
-      setUploadingMedia(false);
-    }
+    setMediaFiles((prev) => [...prev, ...selected]);
+    setMediaTypes((prev) => [...prev, ...newTypes]);
   }
 
   function removeMedia(index: number) {
     setMediaPreviews((prev) => prev.filter((_, i) => i !== index));
-    setMediaKeys((prev) => prev.filter((_, i) => i !== index));
+    setMediaFiles((prev) => prev.filter((_, i) => i !== index));
     setMediaTypes((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleCropDone(blob: Blob) {
     if (editingIndex === null) return;
-    setEditingIndex(null);
-    // Re-upload the cropped image
     const newPreview = URL.createObjectURL(blob);
     setMediaPreviews((prev) => prev.map((p, i) => i === editingIndex ? newPreview : p));
-    // Upload cropped version
-    const file = new File([blob], `cropped_${Date.now()}.jpg`, { type: "image/jpeg" });
-    try {
-      const formData = new FormData();
-      formData.append("files", file);
-      const res = await fetchAPI("/social/media/upload/", { method: "POST", body: formData });
-      const results: { key: string; url: string }[] = res.data || res || [];
-      if (results[0]) {
-        setMediaKeys((prev) => prev.map((k, i) => i === editingIndex ? results[0].key : k));
-      }
-    } catch { /* crop upload failed, keep original */ }
+    const newFile = new File([blob], `cropped_${Date.now()}.jpg`, { type: "image/jpeg" });
+    setMediaFiles((prev) => prev.map((f, i) => i === editingIndex ? newFile : f));
+    setEditingIndex(null);
   }
 
   const { showToast } = useToast();
 
   async function handleCreatePost() {
     const hasText = postContent.trim().length > 0;
-    const hasMedia = mediaKeys.length > 0;
+    const hasMedia = mediaFiles.length > 0;
     if ((!hasText && !hasMedia) || posting) return;
     if (containsProfanity(postContent) || containsProfanity(postTitle)) {
       showToast("error", "Content Warning", getProfanityWarning());
       return;
     }
     setPosting(true);
+    setUploadingMedia(true);
     try {
+      let finalMediaKeys: string[] = [];
+      let finalMediaTypes: string[] = [];
+
+      if (mediaFiles.length > 0) {
+        const formData = new FormData();
+        mediaFiles.forEach((file) => formData.append("files", file));
+        const res = await fetchAPI("/social/media/upload/", { method: "POST", body: formData });
+        const results = res.data || res || [];
+        finalMediaKeys = results.map((r: any) => r.key);
+        finalMediaTypes = mediaTypes;
+      }
+
       const endpoint = activeTab === "post" ? "/social/posts/" : "/social/prayers/";
       const body: Record<string, unknown> = activeTab === "post"
         ? { text_content: postContent }
         : { title: postTitle || "Prayer Request", description: postContent };
-      if (mediaKeys.length > 0) {
-        body.media_keys = mediaKeys;
-        body.media_types = mediaTypes;
+      if (finalMediaKeys.length > 0) {
+        body.media_keys = finalMediaKeys;
+        body.media_types = finalMediaTypes;
       }
 
       await fetchAPI(endpoint, { method: "POST", body: JSON.stringify(body) });
@@ -129,6 +115,7 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
       onPostCreated();
     } catch { /* failed to create post */ } finally {
       setPosting(false);
+      setUploadingMedia(false);
     }
   }
 
@@ -195,7 +182,11 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
             <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
               {mediaPreviews.map((preview, i) => (
                 <div key={i} className="relative shrink-0 w-24 h-24 group/thumb">
-                  <img src={preview} alt={`Preview ${i + 1}`} className="w-full h-full object-cover rounded-xl" />
+                  {mediaTypes[i] === "video" ? (
+                    <video src={preview} className="w-full h-full object-cover rounded-xl" muted playsInline />
+                  ) : (
+                    <img src={preview} alt={`Preview ${i + 1}`} className="w-full h-full object-cover rounded-xl" />
+                  )}
                   <button onClick={() => removeMedia(i)} className="absolute top-1 right-1 w-5 h-5 bg-black/50 rounded-full flex items-center justify-center text-white hover:bg-black/70 z-10">
                     <span className="material-symbols-outlined text-xs">close</span>
                   </button>
@@ -210,14 +201,14 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
                   )}
                 </div>
               ))}
-              {mediaKeys.length < MAX_IMAGES && (
+              {mediaFiles.length < MAX_IMAGES && (
                 <button
                   onClick={() => mediaInputRef.current?.click()}
                   disabled={uploadingMedia}
                   className="shrink-0 w-24 h-24 rounded-xl border-2 border-dashed border-outline-variant/30 flex flex-col items-center justify-center text-on-surface-variant/50 hover:border-primary/40 hover:text-primary/60 transition-all"
                 >
                   <span className="material-symbols-outlined text-xl">add_photo_alternate</span>
-                  <span className="text-[10px] mt-0.5">{mediaKeys.length}/{MAX_IMAGES}</span>
+                  <span className="text-[10px] mt-0.5">{mediaFiles.length}/{MAX_IMAGES}</span>
                 </button>
               )}
             </div>
@@ -249,15 +240,15 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
         {/* Footer */}
         <div className="px-6 sm:px-8 py-4 border-t border-outline-variant/10 flex items-center justify-between shrink-0">
           <div className="flex gap-2">
-            <button onClick={() => mediaInputRef.current?.click()} disabled={mediaKeys.length >= MAX_IMAGES} className="flex items-center gap-2 text-on-surface-variant font-bold text-xs uppercase tracking-widest py-2.5 px-4 rounded-full hover:bg-surface-container-high transition-all disabled:opacity-30">
+            <button onClick={() => mediaInputRef.current?.click()} disabled={mediaFiles.length >= MAX_IMAGES} className="flex items-center gap-2 text-on-surface-variant font-bold text-xs uppercase tracking-widest py-2.5 px-4 rounded-full hover:bg-surface-container-high transition-all disabled:opacity-30">
               <span className="material-symbols-outlined text-lg">{uploadingMedia ? "hourglass_empty" : "image"}</span>
-              {uploadingMedia ? "Uploading..." : mediaKeys.length > 0 ? `Photos (${mediaKeys.length}/${MAX_IMAGES})` : "Photos"}
+              {uploadingMedia ? "Uploading..." : mediaFiles.length > 0 ? `Media (${mediaFiles.length}/${MAX_IMAGES})` : "Photo/Reel"}
             </button>
             <input type="file" ref={mediaInputRef} onChange={handleMediaSelect} className="hidden" accept="image/*,video/*" multiple />
           </div>
           <button
             onClick={handleCreatePost}
-            disabled={(!postContent.trim() && mediaKeys.length === 0) || posting}
+            disabled={(!postContent.trim() && mediaFiles.length === 0) || posting}
             className="bg-primary text-on-primary px-8 py-3 rounded-full font-bold uppercase tracking-widest text-[11px] disabled:opacity-30 shadow-lg shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all"
           >
             {posting ? "Publishing..." : activeTab === "post" ? "Publish" : "Submit"}

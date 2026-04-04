@@ -5,6 +5,8 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import MainLayout from "../../components/MainLayout";
 import { fetchAPI } from "../../lib/api";
+import { containsProfanity, getProfanityWarning } from "../../lib/contentFilter";
+import { useToast } from "../../components/Toast";
 
 const REACTIONS = [
   { type: "praying_hands", emoji: "🙏", label: "Praying Hands" },
@@ -90,6 +92,13 @@ export default function SinglePostPage() {
   const [repliesData, setRepliesData] = useState<Record<string, any[]>>({});
   const [repliesLoading, setRepliesLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [editingPost, setEditingPost] = useState(false);
+  const [editPostText, setEditPostText] = useState("");
+  const [savingPost, setSavingPost] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentText, setEditCommentText] = useState("");
+  const [savingComment, setSavingComment] = useState(false);
+  const { showToast } = useToast();
   useEffect(() => { setCurrentUserId(localStorage.getItem("user_id")); }, []);
 
   // Close reaction picker on outside click
@@ -226,6 +235,46 @@ export default function SinglePostPage() {
     setTimeout(() => setToast(null), 2500);
   }
 
+  async function handleEditPost() {
+    const trimmed = editPostText.trim();
+    if (!trimmed || savingPost) return;
+    if (containsProfanity(trimmed)) {
+      showToast("error", "Language Warning", getProfanityWarning());
+      return;
+    }
+    setSavingPost(true);
+    try {
+      await fetchAPI(`/social/posts/${postId}/`, { method: "PATCH", body: JSON.stringify({ text_content: trimmed }) });
+      setPost((p: any) => ({ ...p, text_content: trimmed }));
+      setEditingPost(false);
+      showToast("success", "Updated", "Your post has been updated.");
+    } catch {
+      showToast("error", "Error", "Failed to update post.");
+    } finally {
+      setSavingPost(false);
+    }
+  }
+
+  async function handleEditComment(commentId: string) {
+    const trimmed = editCommentText.trim();
+    if (!trimmed || savingComment) return;
+    if (containsProfanity(trimmed)) {
+      showToast("error", "Language Warning", getProfanityWarning());
+      return;
+    }
+    setSavingComment(true);
+    try {
+      await fetchAPI(`/social/comments/${commentId}/`, { method: "PATCH", body: JSON.stringify({ text: trimmed }) });
+      setComments((prev) => prev.map((c) => c.id === commentId ? { ...c, text: trimmed } : c));
+      setEditingCommentId(null);
+      showToast("success", "Updated", "Comment updated.");
+    } catch {
+      showToast("error", "Error", "Failed to update comment.");
+    } finally {
+      setSavingComment(false);
+    }
+  }
+
   if (loading) {
     return (
       <MainLayout>
@@ -270,11 +319,34 @@ export default function SinglePostPage() {
               <Link href={`/user/${post.author?.id}`} className="font-headline text-lg hover:text-primary transition-colors">{post.author?.full_name || "Anonymous"}</Link>
               <p className="text-xs text-on-surface-variant uppercase tracking-wider">{new Date(post.created_at).toLocaleDateString()}</p>
             </div>
+            {currentUserId && post.author?.id === currentUserId && !editingPost && (
+              <button onClick={() => { setEditingPost(true); setEditPostText(post.text_content || ""); }} className="ml-auto text-on-surface-variant hover:text-primary transition-colors p-2" title="Edit post">
+                <span className="material-symbols-outlined">edit</span>
+              </button>
+            )}
           </div>
 
-          {post.text_content && (
+          {editingPost ? (
+            <div className="mb-6">
+              <textarea
+                value={editPostText}
+                onChange={(e) => setEditPostText(e.target.value)}
+                className="w-full bg-surface-container-high rounded-xl px-4 py-3 text-lg leading-relaxed resize-none min-h-[80px]"
+                rows={3}
+                autoFocus
+              />
+              <div className="flex items-center gap-2 mt-2">
+                <button onClick={handleEditPost} disabled={savingPost || !editPostText.trim()} className="px-4 py-1.5 bg-primary text-on-primary rounded-lg text-sm font-medium disabled:opacity-50">
+                  {savingPost ? "Saving..." : "Save"}
+                </button>
+                <button onClick={() => setEditingPost(false)} disabled={savingPost} className="px-4 py-1.5 bg-surface-container-high text-on-surface rounded-lg text-sm font-medium">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : post.text_content ? (
             <p className="text-on-surface text-lg leading-relaxed mb-6">{post.text_content}</p>
-          )}
+          ) : null}
 
           {post.media?.length > 0 && (
             <PostDetailCarousel media={post.media} />
@@ -347,13 +419,38 @@ export default function SinglePostPage() {
                           <span className="material-symbols-outlined text-xs">reply</span>
                         </button>
                         {currentUserId && c.user?.id === currentUserId && (
+                          <button onClick={() => { setEditingCommentId(c.id); setEditCommentText(c.text); }} className="text-on-surface-variant hover:text-primary transition-colors" title="Edit">
+                            <span className="material-symbols-outlined text-xs">edit</span>
+                          </button>
+                        )}
+                        {currentUserId && c.user?.id === currentUserId && (
                           <button onClick={() => handleDeleteComment(c.id)} className="text-on-surface-variant hover:text-red-500 transition-colors" title="Delete">
                             <span className="material-symbols-outlined text-xs">delete</span>
                           </button>
                         )}
                       </div>
                     </div>
-                    <p className="text-sm text-on-surface-variant">{c.text}</p>
+                    {editingCommentId === c.id ? (
+                      <div className="mt-1">
+                        <textarea
+                          value={editCommentText}
+                          onChange={(e) => setEditCommentText(e.target.value)}
+                          className="w-full bg-surface-container-high rounded-lg px-3 py-1.5 text-sm resize-none"
+                          rows={2}
+                          autoFocus
+                        />
+                        <div className="flex items-center gap-2 mt-1">
+                          <button onClick={() => handleEditComment(c.id)} disabled={savingComment || !editCommentText.trim()} className="px-3 py-1 bg-primary text-on-primary rounded-lg text-xs font-medium disabled:opacity-50">
+                            {savingComment ? "Saving..." : "Save"}
+                          </button>
+                          <button onClick={() => setEditingCommentId(null)} disabled={savingComment} className="px-3 py-1 bg-surface-container-high text-on-surface rounded-lg text-xs font-medium">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-on-surface-variant">{c.text}</p>
+                    )}
                   </div>
                   {replyingTo === c.id && (
                     <div className="ml-8 mt-2 space-y-2">
