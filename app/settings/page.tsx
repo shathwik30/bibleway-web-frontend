@@ -119,7 +119,17 @@ export default function SettingsPage() {
   }
 
   async function handleLogout() {
-    try { const refresh = localStorage.getItem("refresh_token"); await fetchAPI("/accounts/logout/", { method: "POST", body: JSON.stringify({ refresh }) }).catch(() => {}); } finally { localStorage.removeItem("access_token"); localStorage.removeItem("refresh_token"); window.location.href = "/login"; }
+    try {
+      const refresh = localStorage.getItem("refresh_token");
+      await fetchAPI("/accounts/logout/", { method: "POST", body: JSON.stringify({ refresh }) }).catch(() => {});
+    } finally {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
+      localStorage.removeItem("user");
+      localStorage.removeItem("user_id");
+      try { const { firebaseSignOut } = await import("../lib/firebase"); await firebaseSignOut(); } catch {}
+      window.location.href = "/login";
+    }
   }
 
   const Spinner = () => <div className="flex justify-center py-4"><div className="animate-spin rounded-full h-5 w-5 border-t-2 border-primary"></div></div>;

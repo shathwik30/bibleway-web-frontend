@@ -59,6 +59,7 @@ export default function Navbar({ sidebarCollapsed, onToggleSidebar }: NavbarProp
       localStorage.removeItem("refresh_token");
       localStorage.removeItem("user");
       localStorage.removeItem("user_id");
+      try { const { firebaseSignOut } = await import("../lib/firebase"); await firebaseSignOut(); } catch {}
       window.location.href = "/login";
     }
   }

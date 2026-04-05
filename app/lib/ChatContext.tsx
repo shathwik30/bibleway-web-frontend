@@ -65,6 +65,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { showToast } = useToast();
   // Track which conversations we've joined (have messages loaded) to avoid double unread counts
   const joinedConvsRef = useRef<Set<string>>(new Set());
+  // Map pending optimistic messages by key (convId:text:userId) → tempId for reliable WS replacement
+  const pendingTempIds = useRef<Map<string, string>>(new Map());
   const handleWsMessage = useCallback((data: any) => {
     const currentUid = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
@@ -82,9 +84,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           if (existing.some(m => m.id === realId)) return prev;
 
           if (isOwn) {
-            const idx = existing.findLastIndex(
-              m => m.sender.id === currentUserId && m.text === msg.text
-            );
+            // Find the optimistic message by temp ID (reliable) or fallback to text match
+            const pendingKey = `${convId}:${msg.text}:${currentUserId}`;
+            const tempId = pendingTempIds.current.get(pendingKey);
+            let idx = -1;
+            if (tempId) {
+              idx = existing.findIndex(m => m.id === tempId);
+              pendingTempIds.current.delete(pendingKey);
+            }
+            if (idx === -1) {
+              idx = existing.findLastIndex(
+                m => m.sender.id === currentUserId && m.text === msg.text
+              );
+            }
             if (idx !== -1) {
               const updated = [...existing];
               updated[idx] = { ...updated[idx], id: realId, created_at: msg.created_at };
@@ -106,9 +118,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         });
 
         if (!isOwn) {
+          // Update last message preview but do NOT increment unread_count here —
+          // the conversation.updated event handles unread increments to avoid double-counting.
           setConversations(prev => prev.map(c =>
             c.id === convId
-              ? { ...c, last_message_text: msg.text, last_message_at: msg.created_at, unread_count: c.unread_count + 1, updated_at: msg.created_at }
+              ? { ...c, last_message_text: msg.text, last_message_at: msg.created_at, updated_at: msg.created_at }
               : c
           ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
         }
@@ -287,17 +301,23 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         : c
     ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
 
+    // Track this temp ID so the WS response can replace it reliably
+    pendingTempIds.current.set(`${convId}:${trimmed}:${currentUserId}`, tempId);
+
     // Try WebSocket first
     if (connected) {
       const sent = send("send_message", { conversation_id: convId, text: trimmed });
       if (sent) {
         // WS sent — the server will broadcast back via message.sent
-        // Replace temp ID when we get the server response
+        // The handler will replace the optimistic message using pendingTempIds
         return;
       }
     }
 
-    // Fallback to REST
+    // Fallback to REST — clean up pending tracking since WS won't handle it
+    const pendingKey = `${convId}:${trimmed}:${currentUserId}`;
+    pendingTempIds.current.delete(pendingKey);
+
     try {
       const res = await fetchAPI(`/chat/conversations/${convId}/messages/`, {
         method: "POST",

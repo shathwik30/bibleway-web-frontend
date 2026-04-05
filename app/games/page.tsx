@@ -27,6 +27,7 @@ const GAMES: { id: string; title: string; description: string; icon: string; hre
     icon: "extension",
     href: "/games/crossword",
     players: "1 Player",
+    comingSoon: true,
   },
   {
     id: "find-difference",

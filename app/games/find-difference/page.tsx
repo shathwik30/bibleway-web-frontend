@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import Link from "next/link";
 import MainLayout from "../../components/MainLayout";
 import { FTD_LEVELS } from "../constants/findDifferenceLevels";
@@ -32,8 +32,15 @@ function shuffle<T>(arr: T[]): T[] {
 export default function FindDifferencePage() {
   const [screen, setScreen] = useState<"levels" | "game" | "result">("levels");
   const [levelId, setLevelId] = useState(1);
-  const [unlockedLevel, setUnlockedLevel] = useState(loadUnlocked);
-  const [completedLevels, setCompletedLevels] = useState(loadCompleted);
+  const [unlockedLevel, setUnlockedLevel] = useState(1);
+  const [completedLevels, setCompletedLevels] = useState<Set<number>>(new Set());
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setUnlockedLevel(loadUnlocked());
+    setCompletedLevels(loadCompleted());
+    setMounted(true);
+  }, []);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitted, setSubmitted] = useState(false);
   const [zoomImg, setZoomImg] = useState<number | null>(null);
@@ -85,6 +92,20 @@ export default function FindDifferencePage() {
     selected.forEach((s) => { if (correctSet.has(s)) count++; });
     return count;
   }, [selected, correctSet]);
+
+  if (!mounted) {
+    return (
+      <MainLayout>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+          <div className="animate-pulse space-y-3">
+            {Array.from({ length: 6 }, (_, i) => (
+              <div key={i} className="h-16 bg-surface-container-low rounded-xl" />
+            ))}
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
 
   // LEVEL SELECT
   if (screen === "levels") {

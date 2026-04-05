@@ -30,8 +30,6 @@ function LoginForm() {
         body: JSON.stringify({ email, password }),
       });
       
-      // Django API wraps responses in { message, data }
-      // Backend returns { access: "...", refresh: "..." }
       const tokenData = response.data || response;
       const accessToken = tokenData.access || tokenData.access_token;
       const refreshToken = tokenData.refresh || tokenData.refresh_token;
@@ -40,11 +38,20 @@ function LoginForm() {
         if (refreshToken) {
           localStorage.setItem("refresh_token", refreshToken);
         }
-        if (tokenData.user) {
-          localStorage.setItem("user", JSON.stringify(tokenData.user));
-        }
         if (tokenData.user_id) {
           localStorage.setItem("user_id", tokenData.user_id);
+        }
+
+        // Fetch and store user profile (matches mobile flow)
+        try {
+          const profileRes = await fetchAPI("/accounts/profile/");
+          const profile = profileRes?.data || profileRes;
+          if (profile) {
+            localStorage.setItem("user", JSON.stringify(profile));
+            if (profile.id) localStorage.setItem("user_id", profile.id);
+          }
+        } catch {
+          // Profile fetch is non-blocking — continue to home
         }
       }
 
