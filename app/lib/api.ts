@@ -1,13 +1,14 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://api-bibleway.up.railway.app/api/v1";
 
 const FETCH_TIMEOUT_MS = 15000;
+const UPLOAD_TIMEOUT_MS = 120000; // 2 minutes for file uploads
 
 // Prevent multiple simultaneous token refresh requests
 let refreshPromise: Promise<string | null> | null = null;
 
-function fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
+function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timeout));
 }
 
@@ -50,6 +51,7 @@ async function doTokenRefresh(): Promise<string | null> {
 export async function fetchAPI(endpoint: string, options: RequestInit = {}) {
   const url = `${API_BASE_URL}${endpoint}`;
   const isFormData = typeof window !== "undefined" && options.body instanceof FormData;
+  const timeout = isFormData ? UPLOAD_TIMEOUT_MS : FETCH_TIMEOUT_MS;
 
   const headers: Record<string, string> = {};
 
@@ -69,7 +71,7 @@ export async function fetchAPI(endpoint: string, options: RequestInit = {}) {
   let response = await fetchWithTimeout(url, {
     ...options,
     headers,
-  });
+  }, timeout);
 
   // Handle Token Refresh on 401 Unauthorized
   if (response.status === 401 && typeof window !== "undefined") {
@@ -84,7 +86,7 @@ export async function fetchAPI(endpoint: string, options: RequestInit = {}) {
       response = await fetchWithTimeout(url, {
         ...options,
         headers,
-      });
+      }, timeout);
     } else {
       // Refresh failed — doTokenRefresh already handles redirect, just return
       // a 401 response-like error without throwing to avoid noisy console errors

@@ -143,6 +143,12 @@ export default function CompleteProfilePage() {
             country,
           }),
         });
+        // Upload profile photo if selected
+        if (photo) {
+          const formData = new FormData();
+          formData.append("profile_photo", photo);
+          await fetchAPI("/accounts/profile/", { method: "PATCH", body: formData }).catch(() => {});
+        }
         router.replace("/");
       } else {
         // New Google user — re-authenticate with complete data
@@ -170,6 +176,12 @@ export default function CompleteProfilePage() {
           if (data.user_id) localStorage.setItem("user_id", data.user_id);
           if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
           sessionStorage.removeItem("google_user");
+          // Upload profile photo if selected
+          if (photo) {
+            const formData = new FormData();
+            formData.append("profile_photo", photo);
+            await fetchAPI("/accounts/profile/", { method: "PATCH", body: formData }).catch(() => {});
+          }
           router.replace("/");
         } else {
           setError("Failed to create account. Please try again.");

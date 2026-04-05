@@ -66,9 +66,10 @@ export default function ChatPage() {
             </div>
             <Link
               href="/chat/new"
-              className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary hover:opacity-90 transition-all press-effect editorial-shadow"
+              className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2.5 rounded-full hover:opacity-90 transition-all press-effect editorial-shadow"
             >
-              <span className="material-symbols-outlined text-[20px]">edit_square</span>
+              <span className="material-symbols-outlined text-[18px]">edit_square</span>
+              <span className="text-[13px] font-semibold">New Chat</span>
             </Link>
           </div>
 

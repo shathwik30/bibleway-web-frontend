@@ -90,8 +90,11 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
       if (mediaFiles.length > 0) {
         const formData = new FormData();
         mediaFiles.forEach((file) => formData.append("files", file));
-        const res = await fetchAPI("/social/media/upload/", { method: "POST", body: formData });
-        const results = res.data || res || [];
+        const uploadRes = await fetchAPI("/social/media/upload/", { method: "POST", body: formData });
+        const results = uploadRes?.data || (Array.isArray(uploadRes) ? uploadRes : []);
+        if (!results.length) {
+          throw new Error("Upload returned no results. Please try again.");
+        }
         finalMediaKeys = results.map((r: any) => r.key);
         finalMediaTypes = mediaTypes;
       }
@@ -113,7 +116,10 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
       }
       onClose();
       onPostCreated();
-    } catch { /* failed to create post */ } finally {
+    } catch (err: any) {
+      const msg = err?.name === "AbortError" ? "Upload timed out. Try a smaller file or check your connection." : (err?.message || "Something went wrong.");
+      showToast("error", "Failed to publish", msg);
+    } finally {
       setPosting(false);
       setUploadingMedia(false);
     }
