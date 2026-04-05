@@ -5,6 +5,7 @@ import Link from "next/link";
 import NotificationDropdown from "./NotificationDropdown";
 import GlobalSearch from "./GlobalSearch";
 import { fetchAPI } from "../lib/api";
+import { useTranslation } from "../lib/i18n";
 
 interface NavbarProps {
   sidebarCollapsed?: boolean;
@@ -14,6 +15,7 @@ interface NavbarProps {
 const ICON_BTN = "w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-all duration-200";
 
 export default function Navbar({ sidebarCollapsed, onToggleSidebar }: NavbarProps) {
+  const { t } = useTranslation();
   const [profileOpen, setProfileOpen] = useState(false);
   const [user, setUser] = useState<{ full_name?: string; profile_photo?: string; follower_count?: number; following_count?: number } | null>(null);
   const profileRef = useRef<HTMLDivElement>(null);
@@ -57,6 +59,7 @@ export default function Navbar({ sidebarCollapsed, onToggleSidebar }: NavbarProp
       localStorage.removeItem("refresh_token");
       localStorage.removeItem("user");
       localStorage.removeItem("user_id");
+      try { const { firebaseSignOut } = await import("../lib/firebase"); await firebaseSignOut(); } catch {}
       window.location.href = "/login";
     }
   }
@@ -65,7 +68,7 @@ export default function Navbar({ sidebarCollapsed, onToggleSidebar }: NavbarProp
 
   return (
     <header className="glass-header fixed top-0 left-0 right-0 z-50 transition-shadow duration-300 hover:shadow-sm">
-      <div className="flex justify-between items-center w-full px-6 h-16">
+      <div className="flex justify-between items-center w-full px-3 sm:px-6 h-16">
         {/* Left: Sidebar toggle + Logo */}
         <div className="flex items-center gap-3">
           {onToggleSidebar && (

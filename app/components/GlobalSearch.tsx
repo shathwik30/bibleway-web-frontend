@@ -101,10 +101,50 @@ export default function GlobalSearch() {
   const isSearching = loading || (query.trim() !== "" && query !== debouncedQuery);
   const showDropdown = isFocused && query.trim() !== "";
 
+  const [mobileOpen, setMobileOpen] = useState(false);
+
   return (
     <div className="relative w-full max-w-xl" ref={containerRef}>
-      {/* Search Bar - always visible */}
-      <div className={`flex items-center w-full bg-surface-container rounded-full px-4 py-2 transition-all duration-200 ${
+      {/* Mobile: icon button */}
+      <button
+        onClick={() => { setMobileOpen(true); setTimeout(() => inputRef.current?.focus(), 100); }}
+        className="md:hidden w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-all"
+        aria-label="Search"
+      >
+        <span className="material-symbols-outlined text-[22px]">search</span>
+      </button>
+
+      {/* Mobile: fullscreen overlay */}
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-[200] bg-surface p-4">
+          <div className="flex items-center gap-2 mb-4">
+            <button onClick={() => { setMobileOpen(false); clearSearch(); }} className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high">
+              <span className="material-symbols-outlined">arrow_back</span>
+            </button>
+            <div className="flex-1 flex items-center bg-surface-container rounded-full px-4 py-2">
+              <span className="material-symbols-outlined text-on-surface-variant/60 text-lg shrink-0">search</span>
+              <input
+                ref={inputRef}
+                type="text"
+                className="bg-transparent border-none outline-none w-full px-3 text-sm text-on-surface placeholder-on-surface-variant/50"
+                placeholder="Search Bible, people, shop..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onFocus={() => setIsFocused(true)}
+                autoFocus
+              />
+              {query && (
+                <button onClick={clearSearch} className="cursor-pointer text-on-surface-variant hover:text-on-surface shrink-0">
+                  <span className="material-symbols-outlined text-sm">close</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop: inline search bar */}
+      <div className={`hidden md:flex items-center w-full bg-surface-container rounded-full px-4 py-2 transition-all duration-200 ${
         isFocused ? "outline outline-2 outline-primary shadow-lg shadow-primary/5" : "hover:bg-surface-container-high"
       }`}>
         <span className="material-symbols-outlined text-on-surface-variant/60 text-lg shrink-0">search</span>
@@ -126,7 +166,9 @@ export default function GlobalSearch() {
 
       {/* Dropdown Results */}
       {showDropdown && (
-        <div className="absolute top-12 left-0 right-0 bg-surface-container-lowest rounded-2xl editorial-shadow border border-outline-variant/20 z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className={`bg-surface-container-lowest rounded-2xl editorial-shadow border border-outline-variant/20 z-[201] overflow-hidden ${
+          mobileOpen ? "fixed left-4 right-4 top-20" : "absolute top-12 left-0 right-0"
+        }`}>
           <div className="max-h-[min(calc(100vh-100px),560px)] overflow-y-auto custom-scrollbar">
 
             {isSearching ? (

@@ -4,14 +4,22 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import MainLayout from "../components/MainLayout";
 import { useChat } from "../lib/ChatContext";
+import { useTranslation } from "../lib/i18n";
 
 export default function ChatPage() {
-  const { conversations, loadConversations, markRead, onlineUsers } = useChat();
+  const { t } = useTranslation();
+  const { conversations, loadConversations, markRead, onlineUsers, connected } = useChat();
   const [searchQuery, setSearchQuery] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   useEffect(() => { setCurrentUserId(localStorage.getItem("user_id")); }, []);
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
+
+  // Periodic refresh to catch messages missed during WS disconnections
+  useEffect(() => {
+    const interval = setInterval(() => loadConversations(), 15000);
+    return () => clearInterval(interval);
+  }, [loadConversations]);
 
   const filtered = conversations.filter(c => {
     if (!searchQuery.trim()) return true;
@@ -51,22 +59,23 @@ export default function ChatPage() {
 
   return (
     <MainLayout hideFooter>
-      <div className="max-w-7xl mx-auto flex flex-col h-[calc(100vh-4rem)]" data-page>
+      <div className="max-w-7xl mx-auto flex flex-col h-[calc(100dvh-4rem-5.5rem)] md:h-[calc(100dvh-4rem)]" data-page>
         {/* Header */}
         <div className="px-5 pt-6 pb-2">
           <div className="flex items-center justify-between mb-5">
             <div>
               <h1 className="font-headline text-2xl text-on-surface tracking-tight">Messages</h1>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                <span className="text-[11px] text-on-surface-variant/60">Online</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-emerald-500" : "bg-amber-400"}`} />
+                <span className="text-[11px] text-on-surface-variant/60">{connected ? "Connected" : "Reconnecting..."}</span>
               </div>
             </div>
             <Link
               href="/chat/new"
-              className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary hover:opacity-90 transition-all press-effect editorial-shadow"
+              className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2.5 rounded-full hover:opacity-90 transition-all press-effect editorial-shadow"
             >
-              <span className="material-symbols-outlined text-[20px]">edit_square</span>
+              <span className="material-symbols-outlined text-[18px]">edit_square</span>
+              <span className="text-[13px] font-semibold">New Chat</span>
             </Link>
           </div>
 
@@ -96,7 +105,7 @@ export default function ChatPage() {
           {filtered.length > 0 ? (
             <div className="px-4 space-y-1 py-2">
               {filtered.map((conv) => {
-                const otherUser = conv.other_user || { full_name: "Chat" };
+                const otherUser = conv.other_user || { full_name: "Chat", profile_photo: null, age: 0, id: "" };
                 const lastTime = conv.last_message_at ? formatTime(conv.last_message_at) : "";
                 const hasUnread = conv.unread_count > 0;
 

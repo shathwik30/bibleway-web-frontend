@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import MainLayout from "../../components/MainLayout";
 import { QUIZ_LEVELS } from "../constants/quizLevels";
@@ -19,9 +19,17 @@ function loadHighScores(): Record<number, number> { try { return JSON.parse(getS
 export default function BibleQuizPage() {
   const [screen, setScreen] = useState<"levels" | "story" | "quiz" | "result">("levels");
   const [levelId, setLevelId] = useState(1);
-  const [unlockedLevel, setUnlockedLevel] = useState(loadUnlocked);
-  const [completedLevels, setCompletedLevels] = useState(loadCompleted);
-  const [highScores, setHighScores] = useState(loadHighScores);
+  const [unlockedLevel, setUnlockedLevel] = useState(1);
+  const [completedLevels, setCompletedLevels] = useState<Set<number>>(new Set());
+  const [highScores, setHighScores] = useState<Record<number, number>>({});
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setUnlockedLevel(loadUnlocked());
+    setCompletedLevels(loadCompleted());
+    setHighScores(loadHighScores());
+    setMounted(true);
+  }, []);
   const [questionIdx, setQuestionIdx] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
   const [answered, setAnswered] = useState(false);
@@ -52,11 +60,25 @@ export default function BibleQuizPage() {
     }
   }, [questionIdx, level, correctCount, levelId, unlockedLevel]);
 
+  if (!mounted) {
+    return (
+      <MainLayout>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+          <div className="animate-pulse space-y-3">
+            {Array.from({ length: 6 }, (_, i) => (
+              <div key={i} className="h-16 bg-surface-container-low rounded-xl" />
+            ))}
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
+
   // LEVEL SELECT
   if (screen === "levels") {
     return (
       <MainLayout>
-        <div className="max-w-7xl mx-auto px-6 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
           <Link href="/games" className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors mb-6">
             <span className="material-symbols-outlined">arrow_back</span>
             <span className="text-sm font-medium">Games</span>
@@ -118,7 +140,7 @@ export default function BibleQuizPage() {
   if (screen === "story") {
     return (
       <MainLayout>
-        <div className="max-w-7xl mx-auto px-6 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
           <button onClick={() => setScreen("levels")} className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors mb-6">
             <span className="material-symbols-outlined">arrow_back</span>
             <span className="text-sm font-medium">All Levels</span>
@@ -145,7 +167,7 @@ export default function BibleQuizPage() {
     const isLastLevel = levelId >= QUIZ_LEVELS.length;
     return (
       <MainLayout>
-        <div className="max-w-md mx-auto px-6 py-16 text-center">
+        <div className="max-w-md mx-auto px-4 sm:px-6 py-12 sm:py-16 text-center">
           <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
             <span className="material-symbols-outlined text-primary text-4xl">emoji_events</span>
           </div>
@@ -188,7 +210,7 @@ export default function BibleQuizPage() {
 
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto px-6 py-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <div className="flex items-center justify-between mb-4">
           <button onClick={() => setScreen("levels")} className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors">
             <span className="material-symbols-outlined">arrow_back</span>

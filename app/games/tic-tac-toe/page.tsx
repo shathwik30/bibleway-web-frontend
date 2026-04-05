@@ -116,7 +116,7 @@ export default function TicTacToePage() {
 
   return (
     <MainLayout>
-      <div className="max-w-lg mx-auto px-6 py-12">
+      <div className="max-w-lg mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <Link href="/games" className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors mb-8">
           <span className="material-symbols-outlined">arrow_back</span>
           <span className="text-sm font-medium">Games</span>

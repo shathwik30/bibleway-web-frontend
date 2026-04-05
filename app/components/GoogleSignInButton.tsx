@@ -40,6 +40,10 @@ export default function GoogleSignInButton() {
       }
 
       if (data.is_new_user) {
+        // Save google_user data for the complete-profile page
+        if (data.google_user) {
+          sessionStorage.setItem("google_user", JSON.stringify(data.google_user));
+        }
         router.push("/complete-profile");
       } else {
         router.push("/");

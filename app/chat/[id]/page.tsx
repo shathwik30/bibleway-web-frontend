@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import MainLayout from "../../components/MainLayout";
 import StickerPicker from "../../components/StickerPicker";
 import { useChat } from "../../lib/ChatContext";
 import { fetchAPI } from "../../lib/api";
+import { containsProfanity, getProfanityWarning } from "../../lib/contentFilter";
+import { useToast } from "../../components/Toast";
 
 interface MessageGroup {
   senderId: string;
@@ -21,7 +23,7 @@ export default function ChatConversationPage() {
   const {
     messages, loadMessages, sendMessage,
     markRead, sendTyping, typingUsers, getPresence, onlineUsers,
-    conversations,
+    conversations, connected,
   } = useChat();
   const [text, setText] = useState("");
   const [stickerOpen, setStickerOpen] = useState(false);
@@ -37,7 +39,8 @@ export default function ChatConversationPage() {
   const convMessages = messages[convId] || [];
   const typing = typingUsers[convId] || [];
   const currentConv = conversations.find(c => c.id === convId);
-  const otherUser = currentConv?.other_user;
+  const [fetchedOtherUser, setFetchedOtherUser] = useState<{ id: string; full_name: string; profile_photo: string | null } | null>(null);
+  const otherUser = currentConv?.other_user || fetchedOtherUser;
 
   useEffect(() => {
     if (convId) {
@@ -47,9 +50,43 @@ export default function ChatConversationPage() {
     }
   }, [convId, loadMessages, markRead, getPresence]);
 
+  // Always fetch conversation details to get the other user's name
+  // (conversations list may not be loaded when navigating from notifications/profile)
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [convMessages.length]);
+    if (convId && !fetchedOtherUser) {
+      fetchAPI(`/chat/conversations/${convId}/`).then(res => {
+        const conv = res?.data || res;
+        if (conv?.other_user) setFetchedOtherUser(conv.other_user);
+      }).catch(() => {});
+    }
+  }, [convId, fetchedOtherUser]);
+
+  const [newMsgCount, setNewMsgCount] = useState(0);
+  const prevMsgCountRef = useRef<number>(0);
+  const isNearBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+  }, []);
+
+  useEffect(() => {
+    const isInitialLoad = prevMsgCountRef.current === 0 && convMessages.length > 0;
+    prevMsgCountRef.current = convMessages.length;
+
+    if (isInitialLoad) {
+      // Scroll to bottom on first load without showing "new messages" badge
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+      return;
+    }
+
+    if (isNearBottom()) {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      setNewMsgCount(0);
+    } else if (convMessages.length > 0) {
+      // User is scrolled up — show unread indicator
+      setNewMsgCount(prev => prev + 1);
+    }
+  }, [convMessages.length, isNearBottom]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -89,8 +126,18 @@ export default function ChatConversationPage() {
     return groups;
   }, [convMessages, currentUserId]);
 
+  const { showToast } = useToast();
+
   async function handleSend() {
     if (!text.trim()) return;
+    if (text.trim().length > 1000) {
+      showToast("error", "Message too long", "Messages are limited to 1000 characters.");
+      return;
+    }
+    if (containsProfanity(text)) {
+      showToast("error", "Language Warning", getProfanityWarning());
+      return;
+    }
     await sendMessage(convId, text.trim());
     setText("");
     setStickerOpen(false);
@@ -183,7 +230,7 @@ export default function ChatConversationPage() {
         key={msg.id}
         className={`flex ${isOwn ? "justify-end" : "justify-start"} group/msg relative ${isLast ? "mb-0.5" : "mb-px"}`}
       >
-        <div className="max-w-[90%] min-w-0">
+        <div className="max-w-full min-w-0 overflow-hidden">
           {/* Sticker message - no bubble */}
           {isSticker ? (
             <div className={`flex ${isOwn ? "justify-end" : "justify-start"} px-1`}>
@@ -200,11 +247,11 @@ export default function ChatConversationPage() {
               className={`${isOwn
                 ? ownCorners + " bg-primary text-on-primary"
                 : otherCorners + " bg-surface-container-high text-on-surface"
-              } px-3.5 py-2.5 cursor-pointer transition-colors relative w-fit min-w-[120px]`}
+              } px-3.5 py-2.5 cursor-pointer transition-colors relative max-w-full min-w-[120px] break-words`}
               onClick={() => setMenuMsgId(isMenuOpen ? null : msg.id)}
             >
               {/* Message text */}
-              {msg.text && <p className="text-[14px] leading-relaxed whitespace-pre-wrap break-all">{msg.text}</p>}
+              {msg.text && <p className="text-[14px] leading-relaxed whitespace-pre-wrap break-words overflow-hidden" style={{ overflowWrap: "anywhere" }}>{msg.text}</p>}
 
               {/* Translation */}
               {translations[msg.id] && (
@@ -252,7 +299,7 @@ export default function ChatConversationPage() {
 
   return (
     <MainLayout hideFooter>
-      <div className="flex flex-col h-[calc(100vh-4rem)]" data-page>
+      <div className="flex flex-col h-[calc(100dvh-4rem-5.5rem)] md:h-[calc(100dvh-4rem)]" data-page>
         {/* Header */}
         <div className="flex items-center gap-3 px-3 py-2.5 border-b border-outline-variant/10 bg-surface-container-lowest/90 backdrop-blur-md sticky top-16 z-10">
           <button
@@ -282,7 +329,9 @@ export default function ChatConversationPage() {
                 <span className="text-primary font-medium">
                   {typing.join(", ")} typing...
                 </span>
-              ) : "Online"}
+              ) : otherUser?.id && onlineUsers[otherUser.id] ? (
+                <span className="text-emerald-500">Online</span>
+              ) : connected ? "Last seen recently" : "Connecting..."}
             </p>
           </div>
           <div className="relative">
@@ -316,7 +365,8 @@ export default function ChatConversationPage() {
         {/* Messages area */}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto px-3 py-4 custom-scrollbar bg-surface"
+          onScroll={() => { if (isNearBottom()) setNewMsgCount(0); }}
+          className="flex-1 overflow-y-auto overflow-x-hidden px-2 sm:px-3 py-4 custom-scrollbar bg-surface"
         >
           {convMessages.length === 0 && (
             <div className="flex flex-col items-center justify-center py-20">
@@ -336,7 +386,7 @@ export default function ChatConversationPage() {
                 </div>
               )}
 
-              <div className={`flex flex-col ${group.isOwn ? "items-end" : "items-start"} max-w-[90%] min-w-0 overflow-hidden`}>
+              <div className={`flex flex-col ${group.isOwn ? "items-end" : "items-start"} max-w-[80%] min-w-0 overflow-hidden`}>
                 {/* Sender name for non-own messages */}
                 {!group.isOwn && (
                   <p className="text-[11px] font-semibold text-on-surface-variant/60 mb-1 ml-1">
@@ -371,6 +421,20 @@ export default function ChatConversationPage() {
           )}
         </div>
 
+        {/* New messages indicator */}
+        {newMsgCount > 0 && (
+          <button
+            onClick={() => {
+              scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+              setNewMsgCount(0);
+            }}
+            className="mx-auto flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-on-primary text-xs font-semibold shadow-lg shadow-primary/20 hover:opacity-90 transition-all -mt-2 mb-2 relative z-10"
+          >
+            <span className="material-symbols-outlined text-sm">arrow_downward</span>
+            {newMsgCount} new message{newMsgCount > 1 ? "s" : ""}
+          </button>
+        )}
+
         {/* Input area */}
         <div className="px-3 py-2.5 border-t border-outline-variant/8 bg-surface-container-lowest">
           {/* Sticker picker */}
@@ -396,6 +460,7 @@ export default function ChatConversationPage() {
               <textarea
                 ref={textareaRef}
                 value={text}
+                autoFocus
                 onChange={(e) => {
                   const val = e.target.value;
                   // /sticker slash command

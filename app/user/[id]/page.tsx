@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import MainLayout from "../../components/MainLayout";
 import { fetchAPI } from "../../lib/api";
 import { useChat } from "../../lib/ChatContext";
+import { useToast } from "../../components/Toast";
 
 export default function PublicProfilePage() {
   const params = useParams();
@@ -24,8 +25,11 @@ export default function PublicProfilePage() {
   const [followList, setFollowList] = useState<any[]>([]);
   const [followListLoading, setFollowListLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [messagingLoading, setMessagingLoading] = useState(false);
   useEffect(() => { setCurrentUserId(localStorage.getItem("user_id")); }, []);
+  const router = useRouter();
   const { startConversation } = useChat();
+  const { showToast } = useToast();
 
   useEffect(() => {
     if (!userId) return;
@@ -58,11 +62,13 @@ export default function PublicProfilePage() {
         setIsFollowing(false);
         setProfile((p: any) => ({ ...p, follower_count: Math.max(0, (p.follower_count || 0) - 1) }));
       } else {
-        await fetchAPI(`/accounts/users/${userId}/follow/`, { method: "POST" });
+        await fetchAPI(`/accounts/users/${userId}/follow/`, { method: "POST", body: JSON.stringify({}) });
         setIsFollowing(true);
         setProfile((p: any) => ({ ...p, follower_count: (p.follower_count || 0) + 1 }));
       }
-    } catch { /* follow action failed */ } finally {
+    } catch (err: any) {
+      showToast("error", "Action failed", err?.message || "Could not complete the action.");
+    } finally {
       setFollowLoading(false);
     }
   }
@@ -114,7 +120,7 @@ export default function PublicProfilePage() {
   if (!profile) {
     return (
       <MainLayout>
-        <div className="max-w-7xl mx-auto px-6 py-24 text-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-24 text-center">
           <h1 className="text-3xl font-headline mb-4">User Not Found</h1>
           <Link href="/" className="text-primary font-bold">Go Home</Link>
         </div>
@@ -124,42 +130,68 @@ export default function PublicProfilePage() {
 
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto px-6 py-12 lg:grid lg:grid-cols-12 lg:gap-12">
-        {/* Profile Sidebar */}
-        <section className="lg:col-span-4 mb-12 lg:mb-0">
-          <div className="sticky top-28 flex flex-col items-center lg:items-start space-y-6">
-            <div className="w-32 h-32 lg:w-40 lg:h-40 rounded-xl bg-surface-container-high shadow-2xl shadow-primary/5 flex items-center justify-center overflow-hidden border-2 border-white">
-              {profile.profile_photo ? (
-                <img src={profile.profile_photo} alt={profile.full_name} className="w-full h-full object-cover" />
-              ) : (
-                <span className="material-symbols-outlined text-6xl text-on-surface-variant/30">person</span>
-              )}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-12 lg:grid lg:grid-cols-12 lg:gap-12">
+        {/* Profile Header — compact on mobile, sidebar on desktop */}
+        <section className="lg:col-span-4 mb-6 lg:mb-0">
+          <div className="sticky top-28">
+            {/* Mobile: horizontal compact layout */}
+            <div className="flex items-center gap-4 lg:hidden mb-4">
+              <div className="w-20 h-20 rounded-xl bg-surface-container-high shadow-lg flex items-center justify-center overflow-hidden border-2 border-white shrink-0">
+                {profile.profile_photo ? (
+                  <img src={profile.profile_photo} alt={profile.full_name} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="material-symbols-outlined text-3xl text-on-surface-variant/30">person</span>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h1 className="font-headline text-xl text-on-surface truncate">{profile.full_name}</h1>
+                {profile.bio && <p className="text-on-surface-variant text-sm line-clamp-2 mt-0.5">{profile.bio}</p>}
+                <div className="flex gap-5 mt-2">
+                  <button onClick={() => openFollowList("followers")} className="hover:opacity-70">
+                    <span className="font-bold text-primary">{profile.follower_count || 0}</span>
+                    <span className="text-[10px] text-on-surface-variant ml-1">followers</span>
+                  </button>
+                  <button onClick={() => openFollowList("following")} className="hover:opacity-70">
+                    <span className="font-bold text-primary">{profile.following_count || 0}</span>
+                    <span className="text-[10px] text-on-surface-variant ml-1">following</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div className="text-center lg:text-left">
-              <h1 className="font-headline text-4xl text-on-surface mb-1">{profile.full_name}</h1>
-              <p className="text-on-surface-variant font-body leading-relaxed max-w-sm">
-                {profile.bio || "No bio yet."}
-              </p>
-            </div>
-
-            <div className="flex gap-8 border-y border-outline-variant/15 py-4 w-full justify-center lg:justify-start">
-              <button onClick={() => openFollowList("followers")} className="text-center lg:text-left hover:opacity-70 transition-opacity">
-                <span className="block font-headline text-2xl text-primary">{profile.follower_count || 0}</span>
-                <span className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Followers</span>
-              </button>
-              <button onClick={() => openFollowList("following")} className="text-center lg:text-left hover:opacity-70 transition-opacity">
-                <span className="block font-headline text-2xl text-primary">{profile.following_count || 0}</span>
-                <span className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Following</span>
-              </button>
+            {/* Desktop: vertical sidebar layout */}
+            <div className="hidden lg:flex flex-col items-start space-y-6">
+              <div className="w-40 h-40 rounded-xl bg-surface-container-high shadow-2xl shadow-primary/5 flex items-center justify-center overflow-hidden border-2 border-white">
+                {profile.profile_photo ? (
+                  <img src={profile.profile_photo} alt={profile.full_name} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="material-symbols-outlined text-6xl text-on-surface-variant/30">person</span>
+                )}
+              </div>
+              <div>
+                <h1 className="font-headline text-4xl text-on-surface mb-1">{profile.full_name}</h1>
+                <p className="text-on-surface-variant font-body leading-relaxed max-w-sm">
+                  {profile.bio || "No bio yet."}
+                </p>
+              </div>
+              <div className="flex gap-8 border-y border-outline-variant/15 py-4 w-full">
+                <button onClick={() => openFollowList("followers")} className="text-left hover:opacity-70 transition-opacity">
+                  <span className="block font-headline text-2xl text-primary">{profile.follower_count || 0}</span>
+                  <span className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Followers</span>
+                </button>
+                <button onClick={() => openFollowList("following")} className="text-left hover:opacity-70 transition-opacity">
+                  <span className="block font-headline text-2xl text-primary">{profile.following_count || 0}</span>
+                  <span className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Following</span>
+                </button>
+              </div>
             </div>
 
             {currentUserId !== userId && (
-              <div className="w-full space-y-2 relative">
+              <div className="flex gap-2 lg:flex-col lg:space-y-2 lg:gap-0 w-full mt-4 lg:mt-0">
                 <button
                   onClick={handleFollow}
                   disabled={followLoading}
-                  className={`w-full py-3 rounded-xl font-semibold shadow-lg transition-all ${
+                  className={`flex-1 lg:w-full py-2.5 lg:py-3 rounded-xl font-semibold shadow-lg transition-all text-sm lg:text-base ${
                     isFollowing
                       ? "bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high"
                       : "bg-linear-to-br from-primary to-primary-container text-on-primary shadow-primary/20 hover:opacity-90"
@@ -168,19 +200,31 @@ export default function PublicProfilePage() {
                   {followLoading ? "..." : isFollowing ? "Unfollow" : "Follow"}
                 </button>
                 <button
-                  onClick={() => startConversation(userId)}
-                  className="w-full bg-surface-container-low text-primary py-3 rounded-xl font-semibold hover:bg-surface-container-high transition-all flex items-center justify-center gap-2"
+                  onClick={async () => {
+                    if (messagingLoading) return;
+                    setMessagingLoading(true);
+                    try {
+                      const conv = await startConversation(userId);
+                      if (conv?.id) router.push(`/chat/${conv.id}`);
+                    } catch (err: any) {
+                      showToast("error", "Message failed", err?.message || "Could not start conversation.");
+                    } finally {
+                      setMessagingLoading(false);
+                    }
+                  }}
+                  disabled={messagingLoading}
+                  className="flex-1 lg:w-full bg-surface-container-low text-primary py-2.5 lg:py-3 rounded-xl font-semibold hover:bg-surface-container-high transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-sm lg:text-base"
                 >
-                  <span className="material-symbols-outlined text-lg">chat</span>
-                  Message
+                  <span className="material-symbols-outlined text-lg">{messagingLoading ? "hourglass_empty" : "chat"}</span>
+                  {messagingLoading ? "Opening..." : "Message"}
                 </button>
                 <div className="relative">
                   <button
                     onClick={() => setShowMenu(!showMenu)}
-                    className="w-full bg-surface-container-low text-on-surface-variant py-3 rounded-xl font-semibold hover:bg-surface-container-high transition-all flex items-center justify-center gap-2"
+                    className="h-full lg:w-full bg-surface-container-low text-on-surface-variant py-2.5 lg:py-3 px-3 lg:px-0 rounded-xl font-semibold hover:bg-surface-container-high transition-all flex items-center justify-center gap-2"
                   >
                     <span className="material-symbols-outlined text-lg">more_horiz</span>
-                    More
+                    <span className="hidden lg:inline">More</span>
                   </button>
                   {showMenu && (
                     <div className="absolute top-full left-0 right-0 mt-2 bg-surface-container-lowest rounded-xl shadow-xl border border-outline-variant/20 z-50 overflow-hidden">
@@ -201,12 +245,12 @@ export default function PublicProfilePage() {
         </section>
 
         {/* Content */}
-        <section className="lg:col-span-8 space-y-12">
-          <div className="flex space-x-12 border-b border-outline-variant/15">
-            <button onClick={() => setActiveTab("posts")} className={`pb-4 font-medium ${activeTab === "posts" ? "text-primary border-b-2 border-primary font-semibold" : "text-on-surface-variant hover:text-primary"}`}>
+        <section className="lg:col-span-8 space-y-6 lg:space-y-12">
+          <div className="flex space-x-8 lg:space-x-12 border-b border-outline-variant/15">
+            <button onClick={() => setActiveTab("posts")} className={`pb-3 lg:pb-4 text-sm lg:text-base font-medium ${activeTab === "posts" ? "text-primary border-b-2 border-primary font-semibold" : "text-on-surface-variant hover:text-primary"}`}>
               Posts ({posts.length})
             </button>
-            <button onClick={() => setActiveTab("prayers")} className={`pb-4 font-medium ${activeTab === "prayers" ? "text-primary border-b-2 border-primary font-semibold" : "text-on-surface-variant hover:text-primary"}`}>
+            <button onClick={() => setActiveTab("prayers")} className={`pb-3 lg:pb-4 text-sm lg:text-base font-medium ${activeTab === "prayers" ? "text-primary border-b-2 border-primary font-semibold" : "text-on-surface-variant hover:text-primary"}`}>
               Prayers ({prayers.length})
             </button>
           </div>

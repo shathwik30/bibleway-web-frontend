@@ -7,21 +7,15 @@ import MainLayout from "../components/MainLayout";
 import { fetchAPI } from "../lib/api";
 import { useTranslation } from "../lib/i18n";
 import { useTheme } from "../lib/ThemeContext";
+import { useToast } from "../components/Toast";
 
-const LANGUAGES = [
-  { code: "en", name: "English" },
-  { code: "es", name: "Español" },
-  { code: "fr", name: "Français" },
-  { code: "hi", name: "Hindi (हिन्दी)" },
-  { code: "pt", name: "Português" },
-  { code: "ar", name: "العربية (Arabic)" },
-  { code: "sw", name: "Kiswahili" },
-];
+import { LANGUAGES } from "../lib/constants";
 
 export default function SettingsPage() {
   const router = useRouter();
   const { t, setLocale, locale } = useTranslation();
   const { theme, setTheme } = useTheme();
+  const { showToast } = useToast();
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [language, setLanguage] = useState("en");
@@ -107,8 +101,8 @@ export default function SettingsPage() {
       const r = await fetchAPI(`/shop/downloads/${productId}/`);
       const url = r.data?.url || r.url || r.data?.download_url || r.download_url;
       if (url) window.open(url, "_blank");
-      else alert("Download not available.");
-    } catch { alert("Download failed."); }
+      else showToast("error", "Download Error", "Download not available.");
+    } catch { showToast("error", "Download Error", "Download failed."); }
   }
 
   async function handlePushToggle(enabled: boolean) {
@@ -125,7 +119,17 @@ export default function SettingsPage() {
   }
 
   async function handleLogout() {
-    try { const refresh = localStorage.getItem("refresh_token"); await fetchAPI("/accounts/logout/", { method: "POST", body: JSON.stringify({ refresh }) }).catch(() => {}); } finally { localStorage.removeItem("access_token"); localStorage.removeItem("refresh_token"); window.location.href = "/login"; }
+    try {
+      const refresh = localStorage.getItem("refresh_token");
+      await fetchAPI("/accounts/logout/", { method: "POST", body: JSON.stringify({ refresh }) }).catch(() => {});
+    } finally {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
+      localStorage.removeItem("user");
+      localStorage.removeItem("user_id");
+      try { const { firebaseSignOut } = await import("../lib/firebase"); await firebaseSignOut(); } catch {}
+      window.location.href = "/login";
+    }
   }
 
   const Spinner = () => <div className="flex justify-center py-4"><div className="animate-spin rounded-full h-5 w-5 border-t-2 border-primary"></div></div>;

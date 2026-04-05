@@ -3,15 +3,35 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { fetchAPI } from "../lib/api";
+import { signInWithGoogle } from "../lib/firebase";
 
 const COUNTRIES = [
-  "United States", "United Kingdom", "Canada", "Australia", "Nigeria",
-  "Ghana", "Kenya", "South Africa", "India", "Philippines", "Brazil",
-  "Mexico", "Germany", "France", "Italy", "Spain", "Netherlands",
-  "Sweden", "Norway", "Denmark", "Finland", "Ireland", "New Zealand",
-  "Singapore", "Japan", "South Korea", "Indonesia", "Malaysia",
-  "Colombia", "Argentina", "Chile", "Peru", "Egypt", "Ethiopia",
-  "Tanzania", "Uganda", "Cameroon", "Zimbabwe", "Jamaica", "Trinidad and Tobago",
+  "Afghanistan","Albania","Algeria","Andorra","Angola","Antigua and Barbuda","Argentina","Armenia","Australia","Austria",
+  "Azerbaijan","Bahamas","Bahrain","Bangladesh","Barbados","Belarus","Belgium","Belize","Benin","Bhutan",
+  "Bolivia","Bosnia and Herzegovina","Botswana","Brazil","Brunei","Bulgaria","Burkina Faso","Burundi","Cambodia","Cameroon",
+  "Canada","Cape Verde","Central African Republic","Chad","Chile","China","Colombia","Comoros","Congo","Costa Rica",
+  "Croatia","Cuba","Cyprus","Czech Republic","Denmark","Djibouti","Dominica","Dominican Republic","East Timor","Ecuador",
+  "Egypt","El Salvador","Equatorial Guinea","Eritrea","Estonia","Eswatini","Ethiopia","Fiji","Finland","France",
+  "Gabon","Gambia","Georgia","Germany","Ghana","Greece","Grenada","Guatemala","Guinea","Guinea-Bissau",
+  "Guyana","Haiti","Honduras","Hungary","Iceland","India","Indonesia","Iran","Iraq","Ireland",
+  "Israel","Italy","Ivory Coast","Jamaica","Japan","Jordan","Kazakhstan","Kenya","Kiribati","Kuwait",
+  "Kyrgyzstan","Laos","Latvia","Lebanon","Lesotho","Liberia","Libya","Liechtenstein","Lithuania","Luxembourg",
+  "Madagascar","Malawi","Malaysia","Maldives","Mali","Malta","Marshall Islands","Mauritania","Mauritius","Mexico",
+  "Micronesia","Moldova","Monaco","Mongolia","Montenegro","Morocco","Mozambique","Myanmar","Namibia","Nauru",
+  "Nepal","Netherlands","New Zealand","Nicaragua","Niger","Nigeria","North Korea","North Macedonia","Norway","Oman",
+  "Pakistan","Palau","Palestine","Panama","Papua New Guinea","Paraguay","Peru","Philippines","Poland","Portugal",
+  "Qatar","Romania","Russia","Rwanda","Saint Kitts and Nevis","Saint Lucia","Saint Vincent and the Grenadines","Samoa","San Marino","Sao Tome and Principe",
+  "Saudi Arabia","Senegal","Serbia","Seychelles","Sierra Leone","Singapore","Slovakia","Slovenia","Solomon Islands","Somalia",
+  "South Africa","South Korea","South Sudan","Spain","Sri Lanka","Sudan","Suriname","Sweden","Switzerland","Syria",
+  "Taiwan","Tajikistan","Tanzania","Thailand","Togo","Tonga","Trinidad and Tobago","Tunisia","Turkey","Turkmenistan",
+  "Tuvalu","Uganda","Ukraine","United Arab Emirates","United Kingdom","United States","Uruguay","Uzbekistan","Vanuatu","Vatican City",
+  "Venezuela","Vietnam","Yemen","Zambia","Zimbabwe",
+];
+
+const GENDERS = [
+  { value: "male", label: "Male" },
+  { value: "female", label: "Female" },
+  { value: "prefer_not_to_say", label: "Prefer not to say" },
 ];
 
 export default function CompleteProfilePage() {
@@ -21,32 +41,49 @@ export default function CompleteProfilePage() {
   const [error, setError] = useState("");
 
   const [fullName, setFullName] = useState("");
-  const [username, setUsername] = useState("");
-  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [gender, setGender] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [country, setCountry] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [googleEmail, setGoogleEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    fetchAPI("/accounts/profile/")
-      .then((res) => {
-        const d = res.data || res;
-        if (d.full_name && d.date_of_birth && d.country) {
-          router.replace("/");
-          return;
-        }
-        if (d.full_name) setFullName(d.full_name);
-        if (d.username) setUsername(d.username);
-        if (d.date_of_birth) setDateOfBirth(d.date_of_birth);
-        if (d.country) setCountry(d.country);
-        setLoading(false);
-      })
-      .catch(() => {
-        setLoading(false);
-      });
+    // Check if user already has a token (existing user case)
+    const token = localStorage.getItem("access_token");
+    if (token) {
+      // Already authenticated — check if profile is complete
+      fetchAPI("/accounts/profile/")
+        .then((res) => {
+          const d = res.data || res;
+          if (d.full_name && d.date_of_birth && d.country) {
+            router.replace("/");
+            return;
+          }
+          if (d.full_name) setFullName(d.full_name);
+          if (d.date_of_birth) setDateOfBirth(d.date_of_birth);
+          if (d.country) setCountry(d.country);
+          if (d.gender) setGender(d.gender);
+          setLoading(false);
+        })
+        .catch(() => setLoading(false));
+    } else {
+      // New Google user — get google_user data from sessionStorage
+      const googleUser = sessionStorage.getItem("google_user");
+      if (googleUser) {
+        try {
+          const data = JSON.parse(googleUser);
+          if (data.full_name) setFullName(data.full_name);
+          if (data.email) setGoogleEmail(data.email);
+          if (data.profile_photo) setPhotoPreview(data.profile_photo);
+        } catch {}
+      }
+      setLoading(false);
+    }
   }, [router]);
 
   const checkUsername = useCallback((value: string) => {
@@ -87,25 +124,69 @@ export default function CompleteProfilePage() {
     setError("");
 
     if (!fullName.trim()) { setError("Full name is required."); return; }
-    if (!username.trim() || username.length < 3) { setError("Username must be at least 3 characters."); return; }
-    if (usernameStatus === "taken") { setError("That username is already taken."); return; }
     if (!dateOfBirth) { setError("Date of birth is required."); return; }
+    if (!gender) { setError("Please select your gender."); return; }
     if (!country) { setError("Please select your country."); return; }
 
     setSubmitting(true);
     try {
-      const formData = new FormData();
-      formData.append("full_name", fullName.trim());
-      formData.append("username", username.trim());
-      formData.append("date_of_birth", dateOfBirth);
-      formData.append("country", country);
-      if (photo) formData.append("profile_photo", photo);
+      const token = localStorage.getItem("access_token");
 
-      await fetchAPI("/accounts/profile/", {
-        method: "PATCH",
-        body: formData,
-      });
-      router.replace("/");
+      if (token) {
+        // Already authenticated — just PATCH the profile
+        await fetchAPI("/accounts/profile/", {
+          method: "PATCH",
+          body: JSON.stringify({
+            full_name: fullName.trim(),
+            date_of_birth: dateOfBirth,
+            gender,
+            country,
+          }),
+        });
+        // Upload profile photo if selected
+        if (photo) {
+          const formData = new FormData();
+          formData.append("profile_photo", photo);
+          await fetchAPI("/accounts/profile/", { method: "PATCH", body: formData }).catch(() => {});
+        }
+        router.replace("/");
+      } else {
+        // New Google user — re-authenticate with complete data
+        // Get a fresh Firebase ID token
+        const idToken = await signInWithGoogle();
+
+        const response = await fetchAPI("/accounts/google-auth/", {
+          method: "POST",
+          body: JSON.stringify({
+            id_token: idToken,
+            full_name: fullName.trim(),
+            date_of_birth: dateOfBirth,
+            gender,
+            country,
+          }),
+        });
+
+        const data = response.data || response;
+        const accessToken = data.access || data.access_token;
+        const refreshToken = data.refresh || data.refresh_token;
+
+        if (accessToken) {
+          localStorage.setItem("access_token", accessToken);
+          if (refreshToken) localStorage.setItem("refresh_token", refreshToken);
+          if (data.user_id) localStorage.setItem("user_id", data.user_id);
+          if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
+          sessionStorage.removeItem("google_user");
+          // Upload profile photo if selected
+          if (photo) {
+            const formData = new FormData();
+            formData.append("profile_photo", photo);
+            await fetchAPI("/accounts/profile/", { method: "PATCH", body: formData }).catch(() => {});
+          }
+          router.replace("/");
+        } else {
+          setError("Failed to create account. Please try again.");
+        }
+      }
     } catch (err: any) {
       setError(err?.message || "Something went wrong. Please try again.");
     } finally {
@@ -168,32 +249,19 @@ export default function CompleteProfilePage() {
             />
           </div>
 
-          {/* Username */}
+          {/* Gender */}
           <div>
-            <label className="block text-sm font-medium text-on-surface mb-1.5">Username</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => handleUsernameChange(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
-                placeholder="Choose a username"
-                className="w-full px-4 py-3 rounded-xl bg-surface-container text-on-surface border border-outline-variant/30 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all text-sm pr-10"
-              />
-              <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                {usernameStatus === "checking" && (
-                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-primary" />
-                )}
-                {usernameStatus === "available" && (
-                  <span className="material-symbols-outlined text-green-600 text-lg">check_circle</span>
-                )}
-                {usernameStatus === "taken" && (
-                  <span className="material-symbols-outlined text-red-500 text-lg">cancel</span>
-                )}
-              </div>
-            </div>
-            {usernameStatus === "taken" && (
-              <p className="text-xs text-red-500 mt-1">This username is already taken.</p>
-            )}
+            <label className="block text-sm font-medium text-on-surface mb-1.5">Gender</label>
+            <select
+              value={gender}
+              onChange={(e) => setGender(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-surface-container text-on-surface border border-outline-variant/30 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all text-sm appearance-none"
+            >
+              <option value="">Select gender</option>
+              {GENDERS.map((g) => (
+                <option key={g.value} value={g.value}>{g.label}</option>
+              ))}
+            </select>
           </div>
 
           {/* Date of Birth */}

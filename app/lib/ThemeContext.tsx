@@ -28,7 +28,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const applyTheme = useCallback((t: Theme) => {
     const resolved = t === "system" ? getSystemTheme() : t;
     setResolvedTheme(resolved);
-    document.documentElement.setAttribute("data-theme", resolved);
+    if (typeof document !== "undefined") {
+      document.documentElement.setAttribute("data-theme", resolved);
+    }
   }, []);
 
   const setTheme = useCallback((t: Theme) => {

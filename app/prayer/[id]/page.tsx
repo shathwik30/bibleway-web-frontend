@@ -5,14 +5,10 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import MainLayout from "../../components/MainLayout";
 import { fetchAPI } from "../../lib/api";
+import { containsProfanity, getProfanityWarning } from "../../lib/contentFilter";
+import { useToast } from "../../components/Toast";
 
-const REACTIONS = [
-  { type: "praying_hands", emoji: "🙏", label: "Praying Hands" },
-  { type: "heart", emoji: "❤️", label: "Heart" },
-  { type: "fire", emoji: "🔥", label: "Fire" },
-  { type: "amen", emoji: "🙌", label: "Amen" },
-  { type: "cross", emoji: "✝️", label: "Cross" },
-];
+import { REACTIONS } from "../../lib/constants";
 
 export default function SinglePrayerPage() {
   const params = useParams();
@@ -33,6 +29,10 @@ export default function SinglePrayerPage() {
   const [repliesData, setRepliesData] = useState<Record<string, any[]>>({});
   const [repliesLoading, setRepliesLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentText, setEditCommentText] = useState("");
+  const [savingComment, setSavingComment] = useState(false);
+  const { showToast } = useToast();
   useEffect(() => { setCurrentUserId(localStorage.getItem("user_id")); }, []);
 
   // Close reaction picker on outside click
@@ -156,6 +156,26 @@ export default function SinglePrayerPage() {
     }
   }
 
+  async function handleEditComment(commentId: string) {
+    const trimmed = editCommentText.trim();
+    if (!trimmed || savingComment) return;
+    if (containsProfanity(trimmed)) {
+      showToast("error", "Language Warning", getProfanityWarning());
+      return;
+    }
+    setSavingComment(true);
+    try {
+      await fetchAPI(`/social/comments/${commentId}/`, { method: "PATCH", body: JSON.stringify({ text: trimmed }) });
+      setComments((prev) => prev.map((c) => c.id === commentId ? { ...c, text: trimmed } : c));
+      setEditingCommentId(null);
+      showToast("success", "Updated", "Comment updated.");
+    } catch {
+      showToast("error", "Error", "Failed to update comment.");
+    } finally {
+      setSavingComment(false);
+    }
+  }
+
   async function handleShare() {
     const url = `${window.location.origin}/prayer/${prayerId}`;
     try {
@@ -181,7 +201,7 @@ export default function SinglePrayerPage() {
   if (!prayer) {
     return (
       <MainLayout>
-        <div className="max-w-3xl mx-auto px-6 py-24 text-center">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-24 text-center">
           <h1 className="text-3xl font-headline mb-4">Prayer Request Not Found</h1>
           <Link href="/" className="text-primary font-bold">Go Home</Link>
         </div>
@@ -193,13 +213,13 @@ export default function SinglePrayerPage() {
 
   return (
     <MainLayout>
-      <div className="max-w-3xl mx-auto px-6 py-12">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <Link href="/" className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors mb-8">
           <span className="material-symbols-outlined">arrow_back</span>
           <span className="text-sm font-medium">Back to Feed</span>
         </Link>
 
-        <article className="bg-surface-container-low rounded-xl p-8 editorial-shadow">
+        <article className="bg-surface-container-low rounded-xl p-4 sm:p-8 editorial-shadow">
           <div className="flex items-center space-x-4 mb-6">
             <Link href={`/user/${prayer.author?.id}`} className="w-12 h-12 rounded-full overflow-hidden bg-surface-container-high flex items-center justify-center">
               {prayer.author?.profile_photo ? (
@@ -276,13 +296,38 @@ export default function SinglePrayerPage() {
                           <span className="material-symbols-outlined text-xs">reply</span>
                         </button>
                         {currentUserId && c.user?.id === currentUserId && (
+                          <button onClick={() => { setEditingCommentId(c.id); setEditCommentText(c.text); }} className="text-on-surface-variant hover:text-primary transition-colors" title="Edit">
+                            <span className="material-symbols-outlined text-xs">edit</span>
+                          </button>
+                        )}
+                        {currentUserId && c.user?.id === currentUserId && (
                           <button onClick={() => handleDeleteComment(c.id)} className="text-on-surface-variant hover:text-red-500 transition-colors" title="Delete">
                             <span className="material-symbols-outlined text-xs">delete</span>
                           </button>
                         )}
                       </div>
                     </div>
-                    <p className="text-sm text-on-surface-variant">{c.text}</p>
+                    {editingCommentId === c.id ? (
+                      <div className="mt-1">
+                        <textarea
+                          value={editCommentText}
+                          onChange={(e) => setEditCommentText(e.target.value)}
+                          className="w-full bg-surface-container-high rounded-lg px-3 py-1.5 text-sm resize-none"
+                          rows={2}
+                          autoFocus
+                        />
+                        <div className="flex items-center gap-2 mt-1">
+                          <button onClick={() => handleEditComment(c.id)} disabled={savingComment || !editCommentText.trim()} className="px-3 py-1 bg-primary text-on-primary rounded-lg text-xs font-medium disabled:opacity-50">
+                            {savingComment ? "Saving..." : "Save"}
+                          </button>
+                          <button onClick={() => setEditingCommentId(null)} disabled={savingComment} className="px-3 py-1 bg-surface-container-high text-on-surface rounded-lg text-xs font-medium">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-on-surface-variant">{c.text}</p>
+                    )}
                   </div>
                   {replyingTo === c.id && (
                     <div className="ml-8 mt-2 space-y-2">

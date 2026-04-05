@@ -51,7 +51,9 @@ async function getCroppedImage(imageSrc: string, pixelCrop: Area, rotation: numb
   });
 }
 
-export default function ImageCropper({ imageSrc, aspect, onCropComplete, onCancel, circular }: ImageCropperProps) {
+export default function ImageCropper({ imageSrc, aspect: initialAspect, onCropComplete, onCancel, circular }: ImageCropperProps) {
+  const [aspect, setAspect] = useState<number | undefined>(initialAspect);
+  const [originalAspect, setOriginalAspect] = useState<number | undefined>(undefined);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
@@ -122,12 +124,17 @@ export default function ImageCropper({ imageSrc, aspect, onCropComplete, onCance
           crop={crop}
           zoom={zoom}
           rotation={rotation}
-          aspect={aspect}
+          aspect={aspect || originalAspect}
           cropShape={circular ? "round" : "rect"}
           showGrid={!circular}
           onCropChange={onCropChange}
           onZoomChange={onZoomChange}
           onCropComplete={handleCropComplete}
+          onMediaLoaded={(mediaSize) => {
+            const ratio = mediaSize.width / mediaSize.height;
+            setOriginalAspect(ratio);
+            if (!initialAspect) setAspect(ratio);
+          }}
         />
       </div>
 
@@ -162,6 +169,17 @@ export default function ImageCropper({ imageSrc, aspect, onCropComplete, onCance
           />
           <span className="material-symbols-outlined text-white/50 text-lg">photo_size_select_large</span>
         </div>
+
+        {/* Aspect Ratio Buttons */}
+        {!circular && (
+          <div className="flex justify-center gap-2 pt-2 border-t border-white/10 mt-2">
+            <button onClick={() => setAspect(originalAspect)} className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${aspect === originalAspect ? 'bg-white text-black' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}>Original</button>
+            <button onClick={() => setAspect(1)} className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${aspect === 1 ? 'bg-white text-black' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}>1:1 Square</button>
+            <button onClick={() => setAspect(4 / 5)} className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${aspect === 4 / 5 ? 'bg-white text-black' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}>4:5 Portrait</button>
+            <button onClick={() => setAspect(16 / 9)} className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${aspect === 16 / 9 ? 'bg-white text-black' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}>16:9 Landscape</button>
+            <button onClick={() => setAspect(9 / 16)} className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${aspect === 9 / 16 ? 'bg-white text-black' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}>9:16 Reel</button>
+          </div>
+        )}
       </div>
     </div>,
     document.body

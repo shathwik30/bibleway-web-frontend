@@ -13,6 +13,7 @@ export default function ChangePasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [showPasswords, setShowPasswords] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,19 +62,24 @@ export default function ChangePasswordPage() {
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
               <label className="text-[10px] uppercase tracking-widest font-bold text-primary mb-2 block">Current Password</label>
-              <input
-                type="password"
-                placeholder="••••••••"
-                value={oldPassword}
-                onChange={(e) => setOldPassword(e.target.value)}
-                required
-                className="w-full bg-surface-container-high border-none rounded-xl px-4 py-4 focus:ring-1 focus:ring-tertiary-fixed-dim focus:bg-surface-container-lowest transition-all font-medium"
-              />
+              <div className="relative">
+                <input
+                  type={showPasswords ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  required
+                  className="w-full bg-surface-container-high border-none rounded-xl px-4 py-4 pr-12 focus:ring-1 focus:ring-tertiary-fixed-dim focus:bg-surface-container-lowest transition-all font-medium"
+                />
+                <button type="button" onClick={() => setShowPasswords(!showPasswords)} className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant/50 hover:text-on-surface-variant transition-colors p-1">
+                  <span className="material-symbols-outlined text-[20px]">{showPasswords ? "visibility_off" : "visibility"}</span>
+                </button>
+              </div>
             </div>
             <div>
               <label className="text-[10px] uppercase tracking-widest font-bold text-primary mb-2 block">New Password</label>
               <input
-                type="password"
+                type={showPasswords ? "text" : "password"}
                 placeholder="••••••••"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
@@ -85,7 +91,7 @@ export default function ChangePasswordPage() {
             <div>
               <label className="text-[10px] uppercase tracking-widest font-bold text-primary mb-2 block">Confirm New Password</label>
               <input
-                type="password"
+                type={showPasswords ? "text" : "password"}
                 placeholder="••••••••"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}

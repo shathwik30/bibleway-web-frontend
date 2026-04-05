@@ -12,14 +12,9 @@ import RecommendedPeople from "./components/RecommendedPeople";
 import { useTranslation } from "./lib/i18n";
 import VerseOnboarding from "./components/VerseOnboarding";
 import VerseShareDropdown from "./components/VerseShareCard";
-
-const BACKGROUNDS = [
-  "mountain-bg.png",
-  "forest-bg.png",
-  "ocean-bg.png",
-  "aurora-bg.png",
-  "desert-bg.png"
-];
+import { useToast } from "./components/Toast";
+import { REACTIONS, VERSE_BACKGROUNDS } from "./lib/constants";
+import { mapFeedItem } from "./lib/mapFeedItem";
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<"post" | "prayer">("post");
@@ -45,16 +40,13 @@ export default function HomePage() {
   const [reportCategory, setReportCategory] = useState("inappropriate");
   const [reportSubmitting, setReportSubmitting] = useState(false);
 
+  const { showToast: showSystemToast } = useToast();
+
   // Reaction debounce - prevent rapid-fire clicks
   const reactingPosts = useRef<Set<string>>(new Set());
 
-  // Unified toast
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   function showToast(msg: string) {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast(msg);
-    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+    showSystemToast("info", "", msg);
   }
 
   // Infinite scroll state
@@ -68,14 +60,20 @@ export default function HomePage() {
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   // Verse navigation
-  const [verseDate, setVerseDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
-  const today = new Date().toISOString().split("T")[0];
+  const [verseDate, setVerseDate] = useState<string>("");
+  const [today, setToday] = useState<string>("");
 
   const { t } = useTranslation();
   const reactionRef = useRef<HTMLDivElement>(null);
   const [bgIndex, setBgIndex] = useState(0);
-  useEffect(() => { setBgIndex(new Date().getDay() % BACKGROUNDS.length); }, []);
-  const currentBg = BACKGROUNDS[bgIndex];
+  useEffect(() => {
+    const now = new Date();
+    const dateStr = now.toISOString().split("T")[0];
+    setVerseDate(dateStr);
+    setToday(dateStr);
+    setBgIndex(now.getDay() % VERSE_BACKGROUNDS.length);
+  }, []);
+  const currentBg = VERSE_BACKGROUNDS[bgIndex];
 
   // Close reaction picker + verse share on outside click
   useEffect(() => {
@@ -100,26 +98,8 @@ export default function HomePage() {
         fetchAPI("/social/prayers/").catch(() => null)
       ]);
 
-      const mapItem = (p: any, type: "post" | "prayer") => ({
-        id: p.id,
-        author: p.author?.full_name || "Anonymous",
-        authorId: p.author?.id,
-        authorPhoto: p.author?.profile_photo,
-        time: new Date(p.created_at).toLocaleDateString(),
-        rawDate: p.created_at,
-        title: p.title,
-        content: type === "post" ? p.text_content : p.description,
-        image: p.media?.[0]?.file,
-        likes: p.reaction_count ?? 0,
-        prayers: type === "prayer" ? (p.reaction_count ?? 0) : undefined,
-        comments: p.comment_count ?? 0,
-        type,
-        userReaction: p.user_reaction || null,
-        is_boosted: p.is_boosted || false,
-      });
-
-      const posts = (postsRes?.data?.results ?? postsRes?.results ?? []).map((p: any) => mapItem(p, "post"));
-      const prayers = (prayersRes?.data?.results ?? prayersRes?.results ?? []).map((p: any) => mapItem(p, "prayer"));
+      const posts = (postsRes?.data?.results ?? postsRes?.results ?? []).map((p: any) => mapFeedItem(p, "post"));
+      const prayers = (prayersRes?.data?.results ?? prayersRes?.results ?? []).map((p: any) => mapFeedItem(p, "prayer"));
 
       // Track pagination cursor from posts response
       const nextUrl = postsRes?.data?.next ?? postsRes?.next ?? null;
@@ -176,14 +156,6 @@ export default function HomePage() {
 
   const displayedPosts = feedPosts.filter((post) => post.type === activeTab);
 
-  const REACTIONS = [
-    { type: "praying_hands", emoji: "\u{1F64F}" },
-    { type: "heart", emoji: "\u2764\uFE0F" },
-    { type: "fire", emoji: "\u{1F525}" },
-    { type: "amen", emoji: "\u{1F64C}" },
-    { type: "cross", emoji: "\u271D\uFE0F" },
-  ];
-
   async function handleReact(postId: string, postType: string, emojiType: string) {
     // Prevent rapid-fire clicks while a reaction is in-flight
     if (reactingPosts.current.has(postId)) return;
@@ -226,7 +198,7 @@ export default function HomePage() {
       if (currentPost) {
         setFeedPosts(prev => prev.map(p => p.id !== postId ? p : { ...p, [countKey]: currentPost[countKey], userReaction: currentPost.userReaction }));
       }
-      if ((err as Error)?.message?.includes("token")) alert("Session expired. Please log in again.");
+      if ((err as Error)?.message?.includes("token")) showSystemToast("error", "Session Expired", "Session expired. Please log in again.");
     } finally {
       reactingPosts.current.delete(postId);
     }
@@ -295,34 +267,12 @@ export default function HomePage() {
     if (!nextPageUrl || loadingMore) return;
     setLoadingMore(true);
     try {
-      // Extract cursor/page param from nextPageUrl
       const urlObj = new URL(nextPageUrl);
-      const cursor = urlObj.searchParams.get("cursor") || urlObj.searchParams.get("page") || "";
-      const separator = nextPageUrl.includes("?") ? "" : "";
-      // Build the endpoint with the cursor param
       const params = urlObj.search;
       const endpoint = `/social/posts/${params}`;
       const res = await fetchAPI(endpoint);
 
-      const mapItem = (p: any, type: "post" | "prayer") => ({
-        id: p.id,
-        author: p.author?.full_name || "Anonymous",
-        authorId: p.author?.id,
-        authorPhoto: p.author?.profile_photo,
-        time: new Date(p.created_at).toLocaleDateString(),
-        rawDate: p.created_at,
-        title: p.title,
-        content: type === "post" ? p.text_content : p.description,
-        image: p.media?.[0]?.file,
-        likes: p.reaction_count ?? 0,
-        prayers: type === "prayer" ? (p.reaction_count ?? 0) : undefined,
-        comments: p.comment_count ?? 0,
-        type,
-        userReaction: p.user_reaction || null,
-        is_boosted: p.is_boosted || false,
-      });
-
-      const newPosts = (res?.data?.results ?? res?.results ?? []).map((p: any) => mapItem(p, "post"));
+      const newPosts = (res?.data?.results ?? res?.results ?? []).map((p: any) => mapFeedItem(p, "post"));
       const newNextUrl = res?.data?.next ?? res?.next ?? null;
       setNextPageUrl(newNextUrl);
       setFeedPosts((prev) => {
@@ -394,15 +344,10 @@ export default function HomePage() {
 
   return (
     <MainLayout>
-      <style jsx global>{`
-        @keyframes reactionPop { 0% { transform: scale(0.3); opacity: 0; } 50% { transform: scale(1.4); opacity: 1; } 70% { transform: scale(0.9); } 100% { transform: scale(1); opacity: 0; } }
-        .reaction-animate { animation: reactionPop 0.7s ease-out forwards; position: absolute; font-size: 2rem; pointer-events: none; z-index: 50; }
-      `}</style>
-
-      <div className="max-w-7xl mx-auto px-6 py-8 flex flex-col xl:flex-row gap-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 flex flex-col xl:flex-row gap-8 xl:gap-12">
         <section className="flex-1 space-y-12">
           {/* Verse Header */}
-          <div className="relative overflow-hidden rounded-xl bg-primary-container text-white p-8 md:p-12 editorial-shadow min-h-[300px] flex items-center" style={{ backgroundImage: `url('/${currentBg}')`, backgroundSize: "cover", backgroundPosition: "center" }}>
+          <div className="relative overflow-hidden rounded-xl bg-primary-container text-white p-5 sm:p-8 md:p-12 editorial-shadow min-h-[220px] sm:min-h-[300px] flex items-center" style={{ backgroundImage: `url('/${currentBg}')`, backgroundSize: "cover", backgroundPosition: "center" }}>
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
             <div className="relative z-10 w-full">
               <div className="flex items-center justify-between mb-4">
@@ -420,7 +365,7 @@ export default function HomePage() {
                 </>
               ) : verseData ? (
                 <>
-                  <blockquote className="text-4xl md:text-5xl font-headline leading-tight mb-4 max-w-3xl">{verseData.text}</blockquote>
+                  <blockquote className="text-2xl sm:text-4xl md:text-5xl font-headline leading-tight mb-4 max-w-3xl">{verseData.text}</blockquote>
                   <cite className="text-base text-white/80 font-body">{verseData.reference}</cite>
                   {/* Share + Replay buttons */}
                   <div className="flex items-center gap-3 mt-6">
@@ -459,13 +404,13 @@ export default function HomePage() {
           </div>
 
           {/* Feed Tabs */}
-          <div className="flex items-center justify-between">
-            <div className="flex space-x-10">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center justify-center gap-6 sm:gap-10 flex-1 md:flex-none">
               <button onClick={() => setActiveTab("post")} className={`pb-2 border-b-2 transition-all font-medium tracking-wide ${activeTab === "post" ? "border-primary text-primary" : "border-transparent text-on-surface-variant hover:text-primary"}`}>{t("feed.posts")}</button>
               <button onClick={() => setActiveTab("prayer")} className={`pb-2 border-b-2 transition-all font-medium tracking-wide ${activeTab === "prayer" ? "border-primary text-primary" : "border-transparent text-on-surface-variant hover:text-primary"}`}>{t("feed.prayers")}</button>
             </div>
             {isLoggedIn && (
-              <button onClick={() => setShowPostingModal(true)} className="bg-primary text-on-primary px-6 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 hover:opacity-90 transition-all shadow-lg shadow-primary/20">
+              <button onClick={() => setShowPostingModal(true)} className="hidden md:flex bg-primary text-on-primary px-6 py-2.5 rounded-xl font-semibold text-sm items-center gap-2 hover:opacity-90 transition-all shadow-lg shadow-primary/20 shrink-0">
                 <span className="material-symbols-outlined text-lg">add</span>
                 {activeTab === "post" ? t("feed.createPost") : t("feed.createPrayer")}
               </button>
@@ -612,10 +557,15 @@ export default function HomePage() {
       )}
 
       {/* Unified Toast */}
-      {toast && createPortal(
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-on-surface text-surface px-6 py-3 rounded-full shadow-xl z-[20000] text-sm font-medium animate-in fade-in slide-in-from-bottom-2 duration-200">
-          {toast}
-        </div>,
+      {/* Floating Action Button for creating posts — portaled to escape overflow */}
+      {isLoggedIn && typeof document !== "undefined" && createPortal(
+        <button
+          onClick={() => setShowPostingModal(true)}
+          className="md:hidden fixed bottom-28 right-4 w-14 h-14 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-xl shadow-primary/30 hover:opacity-90 active:scale-95 transition-all z-[100] press-effect"
+          aria-label="Create post"
+        >
+          <span className="material-symbols-outlined text-[28px]">add</span>
+        </button>,
         document.body
       )}
     </MainLayout>

@@ -4,6 +4,16 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { fetchAPI } from "../lib/api";
 import StickerPicker, { STICKERS } from "./StickerPicker";
+import { containsProfanity, getProfanityWarning } from "../lib/contentFilter";
+import { useToast } from "./Toast";
+import { useTranslation } from "../lib/i18n";
+
+interface MediaItem {
+  id?: string;
+  file: string;
+  media_type: string;
+  order?: number;
+}
 
 interface FeedPost {
   id: string;
@@ -15,6 +25,7 @@ interface FeedPost {
   title?: string;
   content: string;
   image?: string;
+  media?: MediaItem[];
   likes: number;
   prayers?: number;
   comments: number;
@@ -23,13 +34,175 @@ interface FeedPost {
   is_boosted?: boolean;
 }
 
-const REACTIONS = [
-  { type: "praying_hands", emoji: "\u{1F64F}", label: "Praying Hands" },
-  { type: "heart", emoji: "\u2764\uFE0F", label: "Heart" },
-  { type: "fire", emoji: "\u{1F525}", label: "Fire" },
-  { type: "amen", emoji: "\u{1F64C}", label: "Amen" },
-  { type: "cross", emoji: "\u271D\uFE0F", label: "Cross" },
-];
+import { REACTIONS } from "../lib/constants";
+
+function MediaLightbox({ src, mediaType, onClose }: { src: string; mediaType: string; onClose: () => void }) {
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 bg-black/95 z-[9999] flex items-center justify-center cursor-zoom-out" onClick={onClose}>
+      <button onClick={onClose} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors z-50">
+        <span className="material-symbols-outlined">close</span>
+      </button>
+      <div className="max-w-[100vw] w-full h-[100dvh] flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        {mediaType === "video" ? (
+          <video src={src} className="max-w-full max-h-[100dvh] h-full object-contain" controls autoPlay playsInline />
+        ) : (
+          <img src={src} alt="Preview" className="max-w-full max-h-[100dvh] object-contain" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CustomVideoPlayer({ src, onMaximize }: { src: string, onMaximize?: () => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const [progress, setProgress] = useState(0);
+  const [showControls, setShowControls] = useState(false);
+
+  useEffect(() => {
+    const ob = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        videoRef.current?.play().catch(()=>{});
+        setIsPlaying(true);
+      } else {
+        videoRef.current?.pause();
+        setIsPlaying(false);
+      }
+    }, { threshold: 0.6 });
+    if (videoRef.current) ob.observe(videoRef.current);
+    return () => ob.disconnect();
+  }, []);
+
+  function togglePlay(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+    if (isPlaying) videoRef.current.pause();
+    else videoRef.current.play();
+    setIsPlaying(!isPlaying);
+  }
+
+  function handleTimeUpdate() {
+    if (!videoRef.current) return;
+    setProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
+  }
+
+  return (
+    <div 
+      className="relative w-full h-full bg-black group flex items-center justify-center"
+      onMouseEnter={() => setShowControls(true)}
+      onMouseLeave={() => setShowControls(false)}
+      onClick={togglePlay}
+    >
+      <video 
+        ref={videoRef}
+        src={src} 
+        className="w-full h-full object-cover max-h-[700px] min-h-[400px]" 
+        loop playsInline muted={isMuted}
+        onTimeUpdate={handleTimeUpdate}
+      />
+      
+      {!isPlaying && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none transition-opacity">
+          <div className="w-16 h-16 rounded-full bg-black/50 text-white flex items-center justify-center backdrop-blur-md">
+            <span className="material-symbols-outlined text-4xl ml-2">play_arrow</span>
+          </div>
+        </div>
+      )}
+
+      <div className={`absolute bottom-0 left-0 right-0 p-4 pt-16 bg-gradient-to-t from-black/80 to-transparent transition-opacity duration-300 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0'}`}>
+        <div className="absolute top-0 left-0 right-0 h-1 bg-white/20">
+          <div className="h-full bg-primary transition-all duration-100" style={{ width: `${progress}%` }} />
+        </div>
+        
+        <div className="flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
+          <button onClick={togglePlay} className="text-white hover:text-white/80 p-1">
+            <span className="material-symbols-outlined text-2xl">{isPlaying ? 'pause' : 'play_arrow'}</span>
+          </button>
+          
+          <div className="flex gap-3">
+            <button onClick={() => setIsMuted(!isMuted)} className="text-white hover:text-white/80 p-1">
+              <span className="material-symbols-outlined text-2xl">{isMuted ? 'volume_off' : 'volume_up'}</span>
+            </button>
+            {onMaximize && (
+              <button onClick={onMaximize} className="text-white hover:text-white/80 p-1">
+                <span className="material-symbols-outlined text-2xl">fullscreen</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PostMediaCarousel({ media }: { media: { file: string; media_type: string }[] }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [lightboxMedia, setLightboxMedia] = useState<{src: string, type: string} | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  function scrollTo(index: number) {
+    const clamped = Math.max(0, Math.min(index, media.length - 1));
+    setActiveIndex(clamped);
+    scrollRef.current?.children[clamped]?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+  }
+
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const index = Math.round(el.scrollLeft / el.clientWidth);
+    setActiveIndex(index);
+  }
+
+  return (
+    <>
+      <div className="relative rounded-xl overflow-hidden mb-6 bg-surface-container-low">
+        <div ref={scrollRef} onScroll={handleScroll} className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar text-[0]">
+          {media.map((item, i) => (
+            <div key={i} className={`w-full shrink-0 snap-center relative bg-surface-container ${media.length > 1 ? 'aspect-[4/5] sm:aspect-[1/1] md:aspect-[4/5] max-h-[650px]' : ''}`}>
+              {item.media_type === "video" ? (
+                <CustomVideoPlayer src={item.file} onMaximize={() => setLightboxMedia({ src: item.file, type: "video" })} />
+              ) : (
+                <img 
+                  src={item.file} 
+                  alt={`Media ${i + 1}`} 
+                  onClick={() => setLightboxMedia({ src: item.file, type: "image" })}
+                  className={`w-full h-full object-cover cursor-zoom-in ${media.length === 1 ? 'max-h-[700px] min-h-[300px]' : ''}`} 
+                />
+              )}
+            </div>
+          ))}
+        </div>
+        {media.length > 1 && (
+          <>
+            {activeIndex > 0 && (
+              <button onClick={(e) => { e.stopPropagation(); scrollTo(activeIndex - 1); }} className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors">
+                <span className="material-symbols-outlined text-lg">chevron_left</span>
+              </button>
+            )}
+            {activeIndex < media.length - 1 && (
+              <button onClick={(e) => { e.stopPropagation(); scrollTo(activeIndex + 1); }} className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors">
+                <span className="material-symbols-outlined text-lg">chevron_right</span>
+              </button>
+            )}
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+              {media.map((_, i) => (
+                <div key={i} className={`w-1.5 h-1.5 rounded-full transition-all ${i === activeIndex ? "bg-white w-3" : "bg-white/50"}`} />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+      {lightboxMedia && <MediaLightbox src={lightboxMedia.src} mediaType={lightboxMedia.type} onClose={() => setLightboxMedia(null)} />}
+    </>
+  );
+}
 
 interface FeedCardProps {
   post: FeedPost;
@@ -48,6 +221,8 @@ export default function FeedCard({
   post, currentUserId, onReact, onDelete, onShare, onReport,
   animatingReaction, openReactionId, setOpenReactionId, reactionRef,
 }: FeedCardProps) {
+  const { showToast } = useToast();
+  const { t } = useTranslation();
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<any[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
@@ -61,6 +236,13 @@ export default function FeedCard({
   const [repliesLoading, setRepliesLoading] = useState<string | null>(null);
   const [openMenu, setOpenMenu] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
+  const [editingPost, setEditingPost] = useState(false);
+  const [editPostText, setEditPostText] = useState("");
+  const [savingPost, setSavingPost] = useState(false);
+  const [localContent, setLocalContent] = useState(post.content);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentText, setEditCommentText] = useState("");
+  const [savingComment, setSavingComment] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -97,6 +279,10 @@ export default function FeedCard({
 
   async function handlePostComment() {
     if (!newComment.trim() || postingComment) return;
+    if (containsProfanity(newComment)) {
+      showToast("error", "Language Warning", getProfanityWarning());
+      return;
+    }
     setPostingComment(true);
     try {
       const endpoint = post.type === "post"
@@ -132,6 +318,10 @@ export default function FeedCard({
 
   async function handlePostReply(commentId: string) {
     if (!replyText.trim() || postingReply) return;
+    if (containsProfanity(replyText)) {
+      showToast("error", "Language Warning", getProfanityWarning());
+      return;
+    }
     setPostingReply(true);
     try {
       await fetchAPI(`/social/comments/${commentId}/replies/`, { method: "POST", body: JSON.stringify({ text: replyText.trim() }) });
@@ -140,6 +330,52 @@ export default function FeedCard({
       await loadReplies(commentId);
     } catch { /* failed to post reply */ } finally {
       setPostingReply(false);
+    }
+  }
+
+  async function handleEditPost() {
+    const trimmed = editPostText.trim();
+    if (!trimmed || savingPost) return;
+    if (containsProfanity(trimmed)) {
+      showToast("error", "Language Warning", getProfanityWarning());
+      return;
+    }
+    setSavingPost(true);
+    try {
+      const endpoint = post.type === "post"
+        ? `/social/posts/${post.id}/`
+        : `/social/prayers/${post.id}/`;
+      const body = post.type === "post"
+        ? { text_content: trimmed }
+        : { description: trimmed };
+      await fetchAPI(endpoint, { method: "PATCH", body: JSON.stringify(body) });
+      setLocalContent(trimmed);
+      setEditingPost(false);
+      showToast("success", "Updated", "Your post has been updated.");
+    } catch {
+      showToast("error", "Error", "Failed to update post.");
+    } finally {
+      setSavingPost(false);
+    }
+  }
+
+  async function handleEditComment(commentId: string) {
+    const trimmed = editCommentText.trim();
+    if (!trimmed || savingComment) return;
+    if (containsProfanity(trimmed)) {
+      showToast("error", "Language Warning", getProfanityWarning());
+      return;
+    }
+    setSavingComment(true);
+    try {
+      await fetchAPI(`/social/comments/${commentId}/`, { method: "PATCH", body: JSON.stringify({ text: trimmed }) });
+      setComments((prev) => prev.map((c) => c.id === commentId ? { ...c, text: trimmed } : c));
+      setEditingCommentId(null);
+      showToast("success", "Updated", "Comment updated.");
+    } catch {
+      showToast("error", "Error", "Failed to update comment.");
+    } finally {
+      setSavingComment(false);
     }
   }
 
@@ -183,29 +419,13 @@ export default function FeedCard({
   }
 
   function renderPostContent(text: string, type: string) {
-    const stickerMatch = text.match(/^\[sticker:(\w+)\]$/);
-    if (stickerMatch) {
-      const stickerId = stickerMatch[1];
-      const gifMatch = stickerId.match(/^gif_(\d+)$/);
-      if (gifMatch) {
-        return (
-          <div className="flex justify-center mb-6">
-            <img src={`/stickers/sticker_${gifMatch[1]}.gif`} alt="Sticker" className="w-32 h-32 object-contain" />
-          </div>
-        );
-      }
-      const sticker = STICKERS.find((s) => s.id === stickerId);
-      if (sticker) {
-        return <p className="text-6xl text-center mb-6">{sticker.emoji}</p>;
-      }
-    }
     return <p className={`text-on-surface leading-relaxed mb-6 ${type === "prayer" ? "italic text-xl" : "text-lg"}`}>{text}</p>;
   }
 
   const userReactionEmoji = post.userReaction ? REACTIONS.find((r) => r.type === post.userReaction)?.emoji : null;
 
   return (
-    <article data-post-id={post.id} data-post-type={post.type} className="bg-surface-container-lowest rounded-xl p-8 editorial-shadow relative card-hover">
+    <article data-post-id={post.id} data-post-type={post.type} className="bg-surface-container-lowest rounded-xl p-8 editorial-shadow relative">
       {animatingReaction?.postId === post.id && (
         <div className="reaction-animate top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">{animatingReaction.emoji}</div>
       )}
@@ -240,6 +460,11 @@ export default function FeedCard({
             {openMenu && (
               <div className="absolute right-0 top-full mt-1 bg-surface-container-lowest rounded-xl shadow-xl border border-outline-variant/20 z-50 overflow-hidden w-44">
                 {currentUserId && post.authorId === currentUserId && (
+                  <button onClick={() => { setEditingPost(true); setEditPostText(localContent); setOpenMenu(false); }} className="w-full text-left px-4 py-2.5 text-sm text-on-surface hover:bg-surface-container-low flex items-center gap-2">
+                    <span className="material-symbols-outlined text-sm">edit</span> Edit Post
+                  </button>
+                )}
+                {currentUserId && post.authorId === currentUserId && (
                   <Link href={`/boost?post=${post.id}`} onClick={() => setOpenMenu(false)} className="w-full text-left px-4 py-2.5 text-sm text-on-surface hover:bg-surface-container-low flex items-center gap-2">
                     <span className="material-symbols-outlined text-sm">rocket_launch</span> Boost Post
                   </Link>
@@ -253,16 +478,37 @@ export default function FeedCard({
         </div>
       </div>
 
-      <Link href={`/${post.type === "prayer" ? "prayer" : "post"}/${post.id}`} className="block group/link">
-        {post.title && <h3 className="text-2xl font-headline mb-3 group-hover/link:text-primary transition-colors">{post.title}</h3>}
-        {renderPostContent(post.content, post.type)}
-      </Link>
-
-      {post.image && (
-        <div className="rounded-xl overflow-hidden mb-6 max-h-96 bg-surface-container-low flex items-center justify-center img-zoom">
-          <img src={post.image} alt="Post media" className="w-full h-full object-cover" />
+      {editingPost ? (
+        <div className="mb-6">
+          {post.title && <h3 className="text-2xl font-headline mb-3">{post.title}</h3>}
+          <textarea
+            value={editPostText}
+            onChange={(e) => setEditPostText(e.target.value)}
+            className="w-full bg-surface-container-high rounded-xl px-4 py-3 text-lg leading-relaxed resize-none min-h-[80px]"
+            rows={3}
+            autoFocus
+          />
+          <div className="flex items-center gap-2 mt-2">
+            <button onClick={handleEditPost} disabled={savingPost || !editPostText.trim()} className="px-4 py-1.5 bg-primary text-on-primary rounded-lg text-sm font-medium disabled:opacity-50">
+              {savingPost ? "Saving..." : "Save"}
+            </button>
+            <button onClick={() => setEditingPost(false)} disabled={savingPost} className="px-4 py-1.5 bg-surface-container-high text-on-surface rounded-lg text-sm font-medium">
+              Cancel
+            </button>
+          </div>
         </div>
+      ) : (
+        <Link href={`/${post.type === "prayer" ? "prayer" : "post"}/${post.id}`} className="block">
+          {post.title && <h3 className="text-2xl font-headline mb-3 hover:text-primary transition-colors">{post.title}</h3>}
+          {renderPostContent(localContent, post.type)}
+        </Link>
       )}
+
+      {(() => {
+        const media = post.media && post.media.length > 0 ? post.media : post.image ? [{ file: post.image, media_type: "image" }] : [];
+        if (media.length === 0) return null;
+        return <PostMediaCarousel media={media} />;
+      })()}
 
       <div className="flex items-center justify-between pt-4 border-t border-outline-variant/10" ref={openReactionId === post.id ? reactionRef : undefined}>
         <div className="flex items-center space-x-6">
@@ -325,13 +571,38 @@ export default function FeedCard({
                             <span className="material-symbols-outlined text-xs">reply</span>
                           </button>
                           {currentUserId && c.user?.id === currentUserId && (
+                            <button onClick={() => { setEditingCommentId(c.id); setEditCommentText(c.text); }} className="text-on-surface-variant hover:text-primary transition-colors" title="Edit">
+                              <span className="material-symbols-outlined text-xs">edit</span>
+                            </button>
+                          )}
+                          {currentUserId && c.user?.id === currentUserId && (
                             <button onClick={() => handleDeleteComment(c.id)} className="text-on-surface-variant hover:text-red-500 transition-colors" title="Delete">
                               <span className="material-symbols-outlined text-xs">delete</span>
                             </button>
                           )}
                         </div>
                       </div>
-                      <p className="text-sm text-on-surface-variant">{renderCommentText(c.text)}</p>
+                      {editingCommentId === c.id ? (
+                        <div className="mt-1">
+                          <textarea
+                            value={editCommentText}
+                            onChange={(e) => setEditCommentText(e.target.value)}
+                            className="w-full bg-surface-container-high rounded-lg px-3 py-1.5 text-sm resize-none"
+                            rows={2}
+                            autoFocus
+                          />
+                          <div className="flex items-center gap-2 mt-1">
+                            <button onClick={() => handleEditComment(c.id)} disabled={savingComment || !editCommentText.trim()} className="px-3 py-1 bg-primary text-on-primary rounded-lg text-xs font-medium disabled:opacity-50">
+                              {savingComment ? "Saving..." : "Save"}
+                            </button>
+                            <button onClick={() => setEditingCommentId(null)} disabled={savingComment} className="px-3 py-1 bg-surface-container-high text-on-surface rounded-lg text-xs font-medium">
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-on-surface-variant">{renderCommentText(c.text)}</p>
+                      )}
                     </div>
                   </div>
                   {replyingTo === c.id && (

@@ -53,18 +53,23 @@ export default function NewChatPage() {
     }
     setError("");
     setStarting(user.id);
-    const conv = await startConversation(user.id);
-    if (conv?.id) {
-      router.push(`/chat/${conv.id}`);
-    } else {
+    try {
+      const conv = await startConversation(user.id);
+      if (conv?.id) {
+        router.push(`/chat/${conv.id}`);
+        return;
+      }
       setError("Failed to start conversation. Please try again.");
-      setStarting(null);
+    } catch (err: any) {
+      const msg = err?.message || "Failed to start conversation.";
+      setError(msg.includes("API error") ? "Something went wrong. Please try again." : msg);
     }
+    setStarting(null);
   }
 
   return (
     <MainLayout hideFooter>
-      <div className="max-w-7xl mx-auto px-6 py-8" data-page>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8" data-page>
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <button

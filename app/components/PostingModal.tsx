@@ -4,7 +4,10 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { fetchAPI } from "../lib/api";
 import ImageCropper from "./ImageCropper";
-import StickerPicker from "./StickerPicker";
+import { containsProfanity, getProfanityWarning } from "../lib/contentFilter";
+import { useToast } from "./Toast";
+
+const MAX_IMAGES = 5;
 
 interface PostingModalProps {
   activeTab: "post" | "prayer";
@@ -24,16 +27,15 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
   });
   const [posting, setPosting] = useState(false);
   const [mediaPreviews, setMediaPreviews] = useState<string[]>([]);
-  const [mediaKeys, setMediaKeys] = useState<string[]>([]);
+  const [mediaFiles, setMediaFiles] = useState<File[]>([]);
   const [mediaTypes, setMediaTypes] = useState<string[]>([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [cropQueue, setCropQueue] = useState<{ file: File; src: string }[]>([]);
   const [croppedFiles, setCroppedFiles] = useState<File[]>([]);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const [mounted, setMounted] = useState(false);
-  const [showStickerPicker, setShowStickerPicker] = useState(false);
-  const [selectedSticker, setSelectedSticker] = useState<string | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -43,10 +45,10 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
 
   function handleMediaSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0 || uploadingMedia) return;
     if (mediaInputRef.current) mediaInputRef.current.value = "";
 
-    const remaining = 10 - mediaKeys.length;
+    const remaining = MAX_IMAGES - mediaPreviews.length;
     const selected = Array.from(files).slice(0, remaining);
     if (selected.length === 0) return;
 
@@ -119,47 +121,63 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
     } finally {
       setUploadingMedia(false);
     }
+    const newPreviews = selected.map((f) => URL.createObjectURL(f));
+    const newTypes = selected.map((f) => f.type.startsWith("video/") ? "video" : "image");
+    setMediaPreviews((prev) => [...prev, ...newPreviews]);
+    setMediaFiles((prev) => [...prev, ...selected]);
+    setMediaTypes((prev) => [...prev, ...newTypes]);
   }
 
   function removeMedia(index: number) {
     setMediaPreviews((prev) => prev.filter((_, i) => i !== index));
-    setMediaKeys((prev) => prev.filter((_, i) => i !== index));
+    setMediaFiles((prev) => prev.filter((_, i) => i !== index));
     setMediaTypes((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function handleStickerSelect(stickerId: string) {
-    setSelectedSticker(stickerId);
-    setShowStickerPicker(false);
+  async function handleCropDone(blob: Blob) {
+    if (editingIndex === null) return;
+    const newPreview = URL.createObjectURL(blob);
+    setMediaPreviews((prev) => prev.map((p, i) => i === editingIndex ? newPreview : p));
+    const newFile = new File([blob], `cropped_${Date.now()}.jpg`, { type: "image/jpeg" });
+    setMediaFiles((prev) => prev.map((f, i) => i === editingIndex ? newFile : f));
+    setEditingIndex(null);
   }
 
-  function clearSticker() {
-    setSelectedSticker(null);
-  }
-
-  function getStickerPreview(stickerId: string) {
-    const gifMatch = stickerId.match(/^gif_(\d+)$/);
-    if (gifMatch) {
-      return <img src={`/stickers/sticker_${gifMatch[1]}.gif`} alt="Sticker" className="w-20 h-20 object-contain" />;
-    }
-    return <span className="text-5xl">{stickerId}</span>;
-  }
+  const { showToast } = useToast();
 
   async function handleCreatePost() {
     const hasText = postContent.trim().length > 0;
-    const hasSticker = !!selectedSticker;
-    const hasMedia = mediaKeys.length > 0;
-    if ((!hasText && !hasSticker && !hasMedia) || posting) return;
+    const hasMedia = mediaFiles.length > 0;
+    if ((!hasText && !hasMedia) || posting) return;
+    if (containsProfanity(postContent) || containsProfanity(postTitle)) {
+      showToast("error", "Content Warning", getProfanityWarning());
+      return;
+    }
     setPosting(true);
+    setUploadingMedia(true);
     try {
+      let finalMediaKeys: string[] = [];
+      let finalMediaTypes: string[] = [];
+
+      if (mediaFiles.length > 0) {
+        const formData = new FormData();
+        mediaFiles.forEach((file) => formData.append("files", file));
+        const uploadRes = await fetchAPI("/social/media/upload/", { method: "POST", body: formData });
+        const results = uploadRes?.data || (Array.isArray(uploadRes) ? uploadRes : []);
+        if (!results.length) {
+          throw new Error("Upload returned no results. Please try again.");
+        }
+        finalMediaKeys = results.map((r: any) => r.key);
+        finalMediaTypes = mediaTypes;
+      }
+
       const endpoint = activeTab === "post" ? "/social/posts/" : "/social/prayers/";
-      const numId = selectedSticker?.startsWith("gif_") ? selectedSticker.replace("gif_", "") : selectedSticker;
-      const textValue = hasSticker && !hasText ? `[sticker:${numId}]` : postContent;
       const body: Record<string, unknown> = activeTab === "post"
-        ? { text_content: textValue }
-        : { title: postTitle || "Prayer Request", description: textValue };
-      if (mediaKeys.length > 0) {
-        body.media_keys = mediaKeys;
-        body.media_types = mediaTypes;
+        ? { text_content: postContent }
+        : { title: postTitle || "Prayer Request", description: postContent };
+      if (finalMediaKeys.length > 0) {
+        body.media_keys = finalMediaKeys;
+        body.media_types = finalMediaTypes;
       }
 
       await fetchAPI(endpoint, { method: "POST", body: JSON.stringify(body) });
@@ -170,8 +188,12 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
       }
       onClose();
       onPostCreated();
-    } catch { /* failed to create post */ } finally {
+    } catch (err: any) {
+      const msg = err?.name === "AbortError" ? "Upload timed out. Try a smaller file or check your connection." : (err?.message || "Something went wrong.");
+      showToast("error", "Failed to publish", msg);
+    } finally {
       setPosting(false);
+      setUploadingMedia(false);
     }
   }
 
@@ -242,16 +264,45 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
           )}
           {mediaPreviews.length > 0 && (
             <div className="grid grid-cols-2 gap-2">
+          {mediaPreviews.length > 0 && (<>
+            <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
               {mediaPreviews.map((preview, i) => (
-                <div key={i} className="relative">
-                  <img src={preview} alt={`Preview ${i + 1}`} className="w-full h-32 object-cover rounded-xl" />
-                  <button onClick={() => removeMedia(i)} className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/50 rounded-full flex items-center justify-center text-white hover:bg-black/70">
+                <div key={i} className="relative shrink-0 w-24 h-24 group/thumb">
+                  {mediaTypes[i] === "video" ? (
+                    <video src={preview} className="w-full h-full object-cover rounded-xl" muted playsInline />
+                  ) : (
+                    <img src={preview} alt={`Preview ${i + 1}`} className="w-full h-full object-cover rounded-xl" />
+                  )}
+                  <button onClick={() => removeMedia(i)} className="absolute top-1 right-1 w-5 h-5 bg-black/50 rounded-full flex items-center justify-center text-white hover:bg-black/70 z-10">
                     <span className="material-symbols-outlined text-xs">close</span>
                   </button>
+                  {mediaTypes[i] !== "video" && (
+                    <button
+                      onClick={() => setEditingIndex(i)}
+                      className="absolute bottom-1 left-1 w-5 h-5 bg-black/50 rounded-full flex items-center justify-center text-white hover:bg-black/70 opacity-0 group-hover/thumb:opacity-100 transition-opacity z-10"
+                      title="Crop & adjust"
+                    >
+                      <span className="material-symbols-outlined text-xs">crop</span>
+                    </button>
+                  )}
                 </div>
               ))}
+              {mediaFiles.length < MAX_IMAGES && (
+                <button
+                  onClick={() => mediaInputRef.current?.click()}
+                  disabled={uploadingMedia}
+                  className="shrink-0 w-24 h-24 rounded-xl border-2 border-dashed border-outline-variant/30 flex flex-col items-center justify-center text-on-surface-variant/50 hover:border-primary/40 hover:text-primary/60 transition-all"
+                >
+                  <span className="material-symbols-outlined text-xl">add_photo_alternate</span>
+                  <span className="text-[10px] mt-0.5">{mediaFiles.length}/{MAX_IMAGES}</span>
+                </button>
+              )}
             </div>
-          )}
+            <p className="flex items-center gap-1.5 text-[11px] text-on-surface-variant/60 mt-1">
+              <span className="material-symbols-outlined text-[13px]">info</span>
+              Tall photos will be cropped to fit the feed. Tap <span className="material-symbols-outlined text-[11px]">crop</span> to adjust.
+            </p>
+          </>)}
 
           {activeTab === "prayer" && (
             <input
@@ -263,18 +314,9 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
             />
           )}
 
-          {selectedSticker && (
-            <div className="flex items-center gap-3 p-3 bg-surface-container-low rounded-xl">
-              {getStickerPreview(selectedSticker)}
-              <button onClick={clearSticker} className="w-6 h-6 bg-black/10 rounded-full flex items-center justify-center hover:bg-black/20 transition-colors">
-                <span className="material-symbols-outlined text-xs">close</span>
-              </button>
-            </div>
-          )}
-
           <textarea
             rows={6}
-            placeholder={selectedSticker ? "Add a caption (optional)..." : activeTab === "post" ? "What's on your heart today?" : "Describe your prayer request..."}
+            placeholder={activeTab === "post" ? "What's on your heart today?" : "Describe your prayer request..."}
             value={postContent}
             onChange={(e) => { setPostContent(e.target.value); localStorage.setItem("draft_content", e.target.value); }}
             className="w-full bg-transparent p-0 focus:outline-none resize-none text-lg font-body leading-relaxed placeholder:text-on-surface-variant/20 text-on-surface no-scrollbar min-h-[160px]"
@@ -284,24 +326,15 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
         {/* Footer */}
         <div className="px-6 sm:px-8 py-4 border-t border-outline-variant/10 flex items-center justify-between shrink-0">
           <div className="flex gap-2">
-            <button onClick={() => mediaInputRef.current?.click()} disabled={mediaKeys.length >= 10} className="flex items-center gap-2 text-on-surface-variant font-bold text-xs uppercase tracking-widest py-2.5 px-4 rounded-full hover:bg-surface-container-high transition-all disabled:opacity-30">
+            <button onClick={() => mediaInputRef.current?.click()} disabled={mediaFiles.length >= MAX_IMAGES} className="flex items-center gap-2 text-on-surface-variant font-bold text-xs uppercase tracking-widest py-2.5 px-4 rounded-full hover:bg-surface-container-high transition-all disabled:opacity-30">
               <span className="material-symbols-outlined text-lg">{uploadingMedia ? "hourglass_empty" : "image"}</span>
-              {uploadingMedia ? "Uploading..." : mediaKeys.length > 0 ? `Media (${mediaKeys.length}/10)` : "Media"}
+              {uploadingMedia ? "Uploading..." : mediaFiles.length > 0 ? `Media (${mediaFiles.length}/${MAX_IMAGES})` : "Photo/Reel"}
             </button>
             <input type="file" ref={mediaInputRef} onChange={handleMediaSelect} className="hidden" accept="image/*,video/*" multiple />
-            <div className="relative">
-              <button onClick={() => setShowStickerPicker(!showStickerPicker)} className="flex items-center gap-2 text-on-surface-variant font-bold text-xs uppercase tracking-widest py-2.5 px-4 rounded-full hover:bg-surface-container-high transition-all">
-                <span className="material-symbols-outlined text-lg">sentiment_satisfied</span>
-                Sticker
-              </button>
-              {showStickerPicker && (
-                <StickerPicker onSelect={handleStickerSelect} onClose={() => setShowStickerPicker(false)} />
-              )}
-            </div>
           </div>
           <button
             onClick={handleCreatePost}
-            disabled={(!postContent.trim() && !selectedSticker && mediaKeys.length === 0) || posting}
+            disabled={(!postContent.trim() && mediaFiles.length === 0) || posting}
             className="bg-primary text-on-primary px-8 py-3 rounded-full font-bold uppercase tracking-widest text-[11px] disabled:opacity-30 shadow-lg shadow-primary/20 hover:opacity-90 active:scale-[0.98] transition-all"
           >
             {posting ? "Publishing..." : activeTab === "post" ? "Publish" : "Submit"}
@@ -316,11 +349,11 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
   return (
     <>
       {createPortal(modal, document.body)}
-      {cropQueue.length > 0 && (
+      {editingIndex !== null && mediaPreviews[editingIndex] && (
         <ImageCropper
-          imageSrc={cropQueue[0].src}
+          imageSrc={mediaPreviews[editingIndex]}
           onCropComplete={handleCropDone}
-          onCancel={handleCropSkip}
+          onCancel={() => setEditingIndex(null)}
         />
       )}
     </>

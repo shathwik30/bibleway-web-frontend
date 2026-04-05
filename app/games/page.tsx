@@ -3,7 +3,7 @@
 import Link from "next/link";
 import MainLayout from "../components/MainLayout";
 
-const GAMES = [
+const GAMES: { id: string; title: string; description: string; icon: string; href: string; players: string; comingSoon?: boolean }[] = [
   {
     id: "tic-tac-toe",
     title: "Tic Tac Toe",
@@ -27,6 +27,7 @@ const GAMES = [
     icon: "extension",
     href: "/games/crossword",
     players: "1 Player",
+    comingSoon: true,
   },
   {
     id: "find-difference",
@@ -41,8 +42,8 @@ const GAMES = [
 export default function GamesPage() {
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto px-6 py-12">
-        <h1 className="text-4xl font-headline text-on-surface mb-2">Games</h1>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+        <h1 className="text-3xl sm:text-4xl font-headline text-on-surface mb-2">Games</h1>
         <p className="text-on-surface-variant mb-8">Rejoice and have fun with these Bible-themed games</p>
 
         <div className="space-y-4">

@@ -5,8 +5,10 @@ import Link from "next/link";
 import MainLayout from "../components/MainLayout";
 import { fetchAPI } from "../lib/api";
 import Shimmer from "../components/Shimmer";
+import { useTranslation } from "../lib/i18n";
 
 export default function ShopPage() {
+  const { t } = useTranslation();
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -66,7 +68,7 @@ export default function ShopPage() {
 
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto px-6 pt-12 pb-32">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-8 sm:pt-12 pb-32">
         {/* Hero */}
         <section className="mb-16">
           <div className="flex flex-col md:flex-row justify-between items-end gap-6">
@@ -74,7 +76,7 @@ export default function ShopPage() {
               <div className="inline-block px-4 py-1.5 mb-6 rounded-full bg-primary-container text-on-primary-container font-label text-[11px] font-bold uppercase tracking-widest">
                 The Curated Collection
               </div>
-              <h1 className="text-5xl md:text-7xl font-headline text-on-surface leading-tight mb-6">
+              <h1 className="text-3xl sm:text-5xl md:text-7xl font-headline text-on-surface leading-tight mb-4 sm:mb-6">
                 Digital <span className="serif-italic">Sanctuary</span>
               </h1>
               <p className="text-lg text-on-surface-variant max-w-lg">

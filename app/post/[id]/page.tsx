@@ -4,16 +4,68 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import MainLayout from "../../components/MainLayout";
-import { STICKERS } from "../../components/StickerPicker";
 import { fetchAPI } from "../../lib/api";
+import { containsProfanity, getProfanityWarning } from "../../lib/contentFilter";
+import { useToast } from "../../components/Toast";
 
-const REACTIONS = [
-  { type: "praying_hands", emoji: "🙏", label: "Praying Hands" },
-  { type: "heart", emoji: "❤️", label: "Heart" },
-  { type: "fire", emoji: "🔥", label: "Fire" },
-  { type: "amen", emoji: "🙌", label: "Amen" },
-  { type: "cross", emoji: "✝️", label: "Cross" },
-];
+import { REACTIONS } from "../../lib/constants";
+
+function PostDetailCarousel({ media }: { media: { id?: string; file: string; media_type: string }[] }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  function scrollTo(index: number) {
+    const clamped = Math.max(0, Math.min(index, media.length - 1));
+    setActiveIndex(clamped);
+    scrollRef.current?.children[clamped]?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+  }
+
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const index = Math.round(el.scrollLeft / el.clientWidth);
+    setActiveIndex(index);
+  }
+
+  if (media.length === 1) {
+    return (
+      <div className="rounded-xl overflow-hidden mb-6 bg-surface-container-low">
+        <img src={media[0].file} alt="Post media" className="w-full object-cover max-h-[600px] min-h-[200px]" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative rounded-xl overflow-hidden mb-6 bg-surface-container-low">
+      <div ref={scrollRef} onScroll={handleScroll} className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar">
+        {media.map((item, i) => (
+          <div key={item.id || i} className="w-full shrink-0 snap-center">
+            <img src={item.file} alt={`Media ${i + 1}`} className="w-full object-cover max-h-[600px] min-h-[200px]" />
+          </div>
+        ))}
+      </div>
+      {media.length > 1 && (
+        <>
+          {activeIndex > 0 && (
+            <button onClick={() => scrollTo(activeIndex - 1)} className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors">
+              <span className="material-symbols-outlined text-lg">chevron_left</span>
+            </button>
+          )}
+          {activeIndex < media.length - 1 && (
+            <button onClick={() => scrollTo(activeIndex + 1)} className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition-colors">
+              <span className="material-symbols-outlined text-lg">chevron_right</span>
+            </button>
+          )}
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+            {media.map((_, i) => (
+              <div key={i} className={`w-1.5 h-1.5 rounded-full transition-all ${i === activeIndex ? "bg-white w-3" : "bg-white/50"}`} />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function SinglePostPage() {
   const params = useParams();
@@ -34,6 +86,13 @@ export default function SinglePostPage() {
   const [repliesData, setRepliesData] = useState<Record<string, any[]>>({});
   const [repliesLoading, setRepliesLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [editingPost, setEditingPost] = useState(false);
+  const [editPostText, setEditPostText] = useState("");
+  const [savingPost, setSavingPost] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentText, setEditCommentText] = useState("");
+  const [savingComment, setSavingComment] = useState(false);
+  const { showToast } = useToast();
   useEffect(() => { setCurrentUserId(localStorage.getItem("user_id")); }, []);
 
   // Close reaction picker on outside click
@@ -170,6 +229,46 @@ export default function SinglePostPage() {
     setTimeout(() => setToast(null), 2500);
   }
 
+  async function handleEditPost() {
+    const trimmed = editPostText.trim();
+    if (!trimmed || savingPost) return;
+    if (containsProfanity(trimmed)) {
+      showToast("error", "Language Warning", getProfanityWarning());
+      return;
+    }
+    setSavingPost(true);
+    try {
+      await fetchAPI(`/social/posts/${postId}/`, { method: "PATCH", body: JSON.stringify({ text_content: trimmed }) });
+      setPost((p: any) => ({ ...p, text_content: trimmed }));
+      setEditingPost(false);
+      showToast("success", "Updated", "Your post has been updated.");
+    } catch {
+      showToast("error", "Error", "Failed to update post.");
+    } finally {
+      setSavingPost(false);
+    }
+  }
+
+  async function handleEditComment(commentId: string) {
+    const trimmed = editCommentText.trim();
+    if (!trimmed || savingComment) return;
+    if (containsProfanity(trimmed)) {
+      showToast("error", "Language Warning", getProfanityWarning());
+      return;
+    }
+    setSavingComment(true);
+    try {
+      await fetchAPI(`/social/comments/${commentId}/`, { method: "PATCH", body: JSON.stringify({ text: trimmed }) });
+      setComments((prev) => prev.map((c) => c.id === commentId ? { ...c, text: trimmed } : c));
+      setEditingCommentId(null);
+      showToast("success", "Updated", "Comment updated.");
+    } catch {
+      showToast("error", "Error", "Failed to update comment.");
+    } finally {
+      setSavingComment(false);
+    }
+  }
+
   if (loading) {
     return (
       <MainLayout>
@@ -183,7 +282,7 @@ export default function SinglePostPage() {
   if (!post) {
     return (
       <MainLayout>
-        <div className="max-w-3xl mx-auto px-6 py-24 text-center">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-24 text-center">
           <h1 className="text-3xl font-headline mb-4">Post Not Found</h1>
           <Link href="/" className="text-primary font-bold">Go Home</Link>
         </div>
@@ -195,13 +294,13 @@ export default function SinglePostPage() {
 
   return (
     <MainLayout>
-      <div className="max-w-3xl mx-auto px-6 py-12">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <Link href="/" className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors mb-8">
           <span className="material-symbols-outlined">arrow_back</span>
           <span className="text-sm font-medium">Back to Feed</span>
         </Link>
 
-        <article className="bg-surface-container-lowest rounded-xl p-8 editorial-shadow">
+        <article className="bg-surface-container-lowest rounded-xl p-4 sm:p-8 editorial-shadow">
           <div className="flex items-center space-x-4 mb-6">
             <Link href={`/user/${post.author?.id}`} className="w-12 h-12 rounded-full overflow-hidden bg-surface-container-high flex items-center justify-center">
               {post.author?.profile_photo ? (
@@ -214,24 +313,37 @@ export default function SinglePostPage() {
               <Link href={`/user/${post.author?.id}`} className="font-headline text-lg hover:text-primary transition-colors">{post.author?.full_name || "Anonymous"}</Link>
               <p className="text-xs text-on-surface-variant uppercase tracking-wider">{new Date(post.created_at).toLocaleDateString()}</p>
             </div>
+            {currentUserId && post.author?.id === currentUserId && !editingPost && (
+              <button onClick={() => { setEditingPost(true); setEditPostText(post.text_content || ""); }} className="ml-auto text-on-surface-variant hover:text-primary transition-colors p-2" title="Edit post">
+                <span className="material-symbols-outlined">edit</span>
+              </button>
+            )}
           </div>
 
-          {(() => {
-            const stickerMatch = post.text_content?.match(/^\[sticker:(\w+)\]$/);
-            if (stickerMatch) {
-              const stickerId = stickerMatch[1];
-              const gifMatch = stickerId.match(/^gif_(\d+)$/);
-              if (gifMatch) return <div className="flex justify-center mb-6"><img src={`/stickers/sticker_${gifMatch[1]}.gif`} alt="Sticker" className="w-32 h-32 object-contain" /></div>;
-              const sticker = STICKERS.find((s) => s.id === stickerId);
-              if (sticker) return <p className="text-6xl text-center mb-6">{sticker.emoji}</p>;
-            }
-            return <p className="text-on-surface text-lg leading-relaxed mb-6">{post.text_content}</p>;
-          })()}
-
-          {post.media?.[0] && (
-            <div className="rounded-xl overflow-hidden mb-6 max-h-[500px] bg-surface-container-low flex items-center justify-center">
-              <img src={post.media[0].file} alt="Post media" className="w-full h-full object-cover" />
+          {editingPost ? (
+            <div className="mb-6">
+              <textarea
+                value={editPostText}
+                onChange={(e) => setEditPostText(e.target.value)}
+                className="w-full bg-surface-container-high rounded-xl px-4 py-3 text-lg leading-relaxed resize-none min-h-[80px]"
+                rows={3}
+                autoFocus
+              />
+              <div className="flex items-center gap-2 mt-2">
+                <button onClick={handleEditPost} disabled={savingPost || !editPostText.trim()} className="px-4 py-1.5 bg-primary text-on-primary rounded-lg text-sm font-medium disabled:opacity-50">
+                  {savingPost ? "Saving..." : "Save"}
+                </button>
+                <button onClick={() => setEditingPost(false)} disabled={savingPost} className="px-4 py-1.5 bg-surface-container-high text-on-surface rounded-lg text-sm font-medium">
+                  Cancel
+                </button>
+              </div>
             </div>
+          ) : post.text_content ? (
+            <p className="text-on-surface text-lg leading-relaxed mb-6">{post.text_content}</p>
+          ) : null}
+
+          {post.media?.length > 0 && (
+            <PostDetailCarousel media={post.media} />
           )}
 
           <div className="flex items-center justify-between pt-4 border-t border-outline-variant/10" ref={reactionRef}>
@@ -301,13 +413,38 @@ export default function SinglePostPage() {
                           <span className="material-symbols-outlined text-xs">reply</span>
                         </button>
                         {currentUserId && c.user?.id === currentUserId && (
+                          <button onClick={() => { setEditingCommentId(c.id); setEditCommentText(c.text); }} className="text-on-surface-variant hover:text-primary transition-colors" title="Edit">
+                            <span className="material-symbols-outlined text-xs">edit</span>
+                          </button>
+                        )}
+                        {currentUserId && c.user?.id === currentUserId && (
                           <button onClick={() => handleDeleteComment(c.id)} className="text-on-surface-variant hover:text-red-500 transition-colors" title="Delete">
                             <span className="material-symbols-outlined text-xs">delete</span>
                           </button>
                         )}
                       </div>
                     </div>
-                    <p className="text-sm text-on-surface-variant">{c.text}</p>
+                    {editingCommentId === c.id ? (
+                      <div className="mt-1">
+                        <textarea
+                          value={editCommentText}
+                          onChange={(e) => setEditCommentText(e.target.value)}
+                          className="w-full bg-surface-container-high rounded-lg px-3 py-1.5 text-sm resize-none"
+                          rows={2}
+                          autoFocus
+                        />
+                        <div className="flex items-center gap-2 mt-1">
+                          <button onClick={() => handleEditComment(c.id)} disabled={savingComment || !editCommentText.trim()} className="px-3 py-1 bg-primary text-on-primary rounded-lg text-xs font-medium disabled:opacity-50">
+                            {savingComment ? "Saving..." : "Save"}
+                          </button>
+                          <button onClick={() => setEditingCommentId(null)} disabled={savingComment} className="px-3 py-1 bg-surface-container-high text-on-surface rounded-lg text-xs font-medium">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-on-surface-variant">{c.text}</p>
+                    )}
                   </div>
                   {replyingTo === c.id && (
                     <div className="ml-8 mt-2 space-y-2">

@@ -84,38 +84,22 @@ function VerifyEmailForm() {
             type="text"
             placeholder="000000"
             value={otpCode}
-            onChange={(e) => setOtpCode(e.target.value)}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
             required
             maxLength={6}
-            className="w-full bg-surface-container-high border-none rounded-xl px-4 py-6 text-center text-3xl tracking-[1em] focus:ring-1 focus:ring-tertiary-fixed-dim focus:bg-surface-container-lowest transition-all font-bold placeholder:tracking-normal placeholder:font-medium placeholder:text-lg"
+            className="w-full bg-surface-container-high border-none rounded-xl px-4 py-6 text-center text-3xl tracking-[0.5em] focus:ring-1 focus:ring-tertiary-fixed-dim focus:bg-surface-container-lowest transition-all font-bold placeholder:tracking-normal placeholder:font-medium placeholder:text-lg"
           />
         </div>
         <button
           type="submit"
-          disabled={loading || otpCode.length < 4}
+          disabled={loading || otpCode.length !== 6}
           className="w-full bg-linear-to-br from-primary to-primary-container text-on-primary py-4 rounded-xl font-bold text-sm tracking-widest uppercase shadow-lg shadow-primary/20 hover:opacity-90 transition-all disabled:opacity-50"
         >
           {loading ? "Verifying..." : "Verify Account"}
         </button>
       </form>
-
-      {/* TODO: REMOVE BEFORE PRODUCTION — Skip verification for testing */}
-      <div className="mt-6">
-        <button
-          onClick={async () => {
-            try {
-              await fetchAPI("/accounts/verify-email/", {
-                method: "POST",
-                body: JSON.stringify({ email, otp_code: "000000", skip_verification: true }),
-              });
-            } catch {}
-            router.push("/login?registered=1");
-          }}
-          className="w-full py-3 rounded-xl bg-surface-container-high text-on-surface-variant font-medium text-sm hover:bg-surface-container-highest transition-all border border-dashed border-outline-variant"
-        >
-          Skip Verification (Testing Only)
-        </button>
-      </div>
 
       <div className="mt-10 text-center">
         <p className="text-sm text-on-surface-variant mb-2">

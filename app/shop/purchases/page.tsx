@@ -5,8 +5,12 @@ import Link from "next/link";
 import MainLayout from "../../components/MainLayout";
 import { fetchAPI } from "../../lib/api";
 import Shimmer from "../../components/Shimmer";
+import { useToast } from "../../components/Toast";
+import { useTranslation } from "../../lib/i18n";
 
 export default function MyPurchasesPage() {
+  const { t } = useTranslation();
+  const { showToast } = useToast();
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -31,10 +35,10 @@ export default function MyPurchasesPage() {
       if (url) {
         window.open(url, "_blank");
       } else {
-        alert("Download not available.");
+        showToast("error", "Download Error", "Download not available.");
       }
     } catch {
-      alert("Download failed.");
+      showToast("error", "Download Error", "Download failed.");
     } finally {
       setDownloadingId(null);
     }

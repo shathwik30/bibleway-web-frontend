@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import { useWebSocket } from "./useWebSocket";
 import { fetchAPI } from "./api";
+import { useToast } from "../components/Toast";
 
 interface Conversation {
   id: string;
@@ -60,13 +61,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
   const [onlineUsers, setOnlineUsers] = useState<Record<string, boolean>>({});
   const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const prevUnreadRef = useRef<number>(0);
+  const { showToast } = useToast();
   // Track which conversations we've joined (have messages loaded) to avoid double unread counts
   const joinedConvsRef = useRef<Set<string>>(new Set());
-
-  // ------------------------------------------------------------------
-  // WebSocket message handler
-  // ------------------------------------------------------------------
+  // Map pending optimistic messages by key (convId:text:userId) → tempId for reliable WS replacement
+  const pendingTempIds = useRef<Map<string, string>>(new Map());
   const handleWsMessage = useCallback((data: any) => {
+    const currentUid = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
+
     switch (data.type) {
       case "message.sent": {
         const msg = data.data;
@@ -78,29 +81,30 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
         setMessages(prev => {
           const existing = prev[convId] || [];
-          // Deduplicate — already have this real ID
           if (existing.some(m => m.id === realId)) return prev;
 
           if (isOwn) {
-            // Replace the optimistic message (temp UUID) with the real server message.
-            // The optimistic msg is the last message from us with a text match.
-            const idx = existing.findLastIndex(
-              m => m.sender.id === currentUserId && m.text === msg.text
-            );
+            // Find the optimistic message by temp ID (reliable) or fallback to text match
+            const pendingKey = `${convId}:${msg.text}:${currentUserId}`;
+            const tempId = pendingTempIds.current.get(pendingKey);
+            let idx = -1;
+            if (tempId) {
+              idx = existing.findIndex(m => m.id === tempId);
+              pendingTempIds.current.delete(pendingKey);
+            }
+            if (idx === -1) {
+              idx = existing.findLastIndex(
+                m => m.sender.id === currentUserId && m.text === msg.text
+              );
+            }
             if (idx !== -1) {
               const updated = [...existing];
-              updated[idx] = {
-                ...updated[idx],
-                id: realId,
-                created_at: msg.created_at,
-              };
+              updated[idx] = { ...updated[idx], id: realId, created_at: msg.created_at };
               return { ...prev, [convId]: updated };
             }
-            // No optimistic message found — skip (shouldn't happen)
             return prev;
           }
 
-          // Other user's message — append
           return {
             ...prev,
             [convId]: [...existing, {
@@ -113,11 +117,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           };
         });
 
-        // Update conversation list (only bump unread for other user's messages)
         if (!isOwn) {
+          // Update last message preview but do NOT increment unread_count here —
+          // the conversation.updated event handles unread increments to avoid double-counting.
           setConversations(prev => prev.map(c =>
             c.id === convId
-              ? { ...c, last_message_text: msg.text, last_message_at: msg.created_at, unread_count: c.unread_count + 1, updated_at: msg.created_at }
+              ? { ...c, last_message_text: msg.text, last_message_at: msg.created_at, updated_at: msg.created_at }
               : c
           ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
         }
@@ -125,10 +130,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
       case "conversation.updated": {
         const d = data.data;
-        // If we've joined this conversation (messages loaded), we already
-        // got message.sent which bumped unread. Don't double-count.
+        if (!d.conversation_id) break;
         const alreadyInGroup = joinedConvsRef.current.has(d.conversation_id);
-
         setConversations(prev => {
           const updated = prev.map(c =>
             c.id === d.conversation_id
@@ -173,12 +176,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const { conversation_id, user_id } = data.data;
         const currentUserId = localStorage.getItem("user_id") || "";
         if (user_id === currentUserId) {
-          // I read messages — clear my unread count
           setConversations(prev => prev.map(c =>
             c.id === conversation_id ? { ...c, unread_count: 0 } : c
           ));
         } else {
-          // Other user read my messages — mark as read in message list
           setMessages(prev => {
             const convMsgs = prev[conversation_id];
             if (!convMsgs) return prev;
@@ -219,6 +220,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   // ------------------------------------------------------------------
 
   const loadConversations = useCallback(async () => {
+    // Skip if user is not logged in
+    if (typeof window !== "undefined" && !localStorage.getItem("access_token")) return;
     try {
       const res = await fetchAPI("/chat/conversations/");
       const convs = res?.data?.results || res?.results || [];
@@ -228,8 +231,21 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         return new Date(timeB).getTime() - new Date(timeA).getTime();
       });
       setConversations(sorted);
-    } catch { /* failed to load conversations */ }
-  }, []);
+      // Show toast for new unread messages
+      const totalUnread = sorted.reduce((sum: number, c: any) => sum + (c.unread_count || 0), 0);
+      if (totalUnread > prevUnreadRef.current && prevUnreadRef.current >= 0) {
+        const newest = sorted.find((c: any) => c.unread_count > 0);
+        if (newest) {
+          const senderName = newest.other_user?.full_name || "Someone";
+          const preview = newest.last_message_text?.match(/^\[sticker:.+\]$/) ? "Sent a sticker" : newest.last_message_text || "New message";
+          showToast("notification", senderName, preview);
+        }
+      }
+      prevUnreadRef.current = totalUnread;
+    } catch (err: any) {
+      console.error("Failed to load conversations:", err.message);
+    }
+  }, [showToast]);
 
   const loadMessages = useCallback(async (convId: string) => {
     try {
@@ -245,7 +261,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       });
       setMessages(prev => ({ ...prev, [convId]: deduped }));
       joinedConvsRef.current.add(convId);
-    } catch { /* failed to load messages */ }
+    } catch (err: any) {
+      console.error("Failed to load messages:", err.message);
+    }
 
     // Join conversation group via WS for real-time updates
     if (connected) {
@@ -283,17 +301,23 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         : c
     ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
 
+    // Track this temp ID so the WS response can replace it reliably
+    pendingTempIds.current.set(`${convId}:${trimmed}:${currentUserId}`, tempId);
+
     // Try WebSocket first
     if (connected) {
       const sent = send("send_message", { conversation_id: convId, text: trimmed });
       if (sent) {
         // WS sent — the server will broadcast back via message.sent
-        // Replace temp ID when we get the server response
+        // The handler will replace the optimistic message using pendingTempIds
         return;
       }
     }
 
-    // Fallback to REST
+    // Fallback to REST — clean up pending tracking since WS won't handle it
+    const pendingKey = `${convId}:${trimmed}:${currentUserId}`;
+    pendingTempIds.current.delete(pendingKey);
+
     try {
       const res = await fetchAPI(`/chat/conversations/${convId}/messages/`, {
         method: "POST",
@@ -317,14 +341,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           ),
         }));
       }
-    } catch {
+    } catch (err: any) {
+      console.error("Send message failed:", err.message);
+      showToast("error", "Failed to send message", err.message || "Please try again.");
       // Remove optimistic message on failure
       setMessages(prev => ({
         ...prev,
         [convId]: (prev[convId] || []).filter(m => m.id !== tempId),
       }));
     }
-  }, [connected, send]);
+  }, [connected, send, showToast]);
 
   const markRead = useCallback(async (convId: string) => {
     setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 0 } : c));
@@ -366,8 +392,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         await loadConversations();
         return conv;
       }
-    } catch { /* failed */ }
-    return null;
+      throw new Error("No conversation returned from server.");
+    } catch (err: any) {
+      console.error("Start conversation failed:", err.message);
+      // Re-throw so the caller (new chat page) can show a specific error
+      throw err;
+    }
   }, [loadConversations]);
 
   // ------------------------------------------------------------------

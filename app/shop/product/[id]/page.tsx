@@ -6,15 +6,17 @@ import Link from "next/link";
 import MainLayout from "../../../components/MainLayout";
 import { fetchAPI } from "../../../lib/api";
 import Shimmer from "../../../components/Shimmer";
+import { useToast } from "../../../components/Toast";
+import { openRazorpayCheckout, RazorpayPaymentResponse } from "../../../lib/razorpay";
 
 export default function ProductDetailPage() {
+  const { showToast } = useToast();
   const params = useParams();
   const productId = params.id as string;
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState(false);
   const [purchased, setPurchased] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
@@ -22,7 +24,10 @@ export default function ProductDetailPage() {
     async function load() {
       try {
         const res = await fetchAPI(`/shop/products/${productId}/`);
-        setProduct(res.data || res);
+        const data = res.data || res;
+        setProduct(data);
+        // If the product already has a download_url, user owns it
+        if (data.download_url) setPurchased(true);
       } catch { /* failed to load */ } finally {
         setLoading(false);
       }
@@ -30,7 +35,8 @@ export default function ProductDetailPage() {
     load();
   }, [productId]);
 
-  async function handlePurchase() {
+  // ─── Free product: direct claim ──────────────────────────────────
+  async function handleFreeClaim() {
     setPurchasing(true);
     try {
       await fetchAPI("/shop/purchases/", {
@@ -38,14 +44,73 @@ export default function ProductDetailPage() {
         body: JSON.stringify({ product_id: productId }),
       });
       setPurchased(true);
-      setShowConfirm(false);
+      showToast("success", "Downloaded!", "Free product added to your library.");
     } catch (err: any) {
-      alert(err.message || "Purchase failed.");
+      showToast("error", "Failed", err.message || "Could not claim free product.");
     } finally {
       setPurchasing(false);
     }
   }
 
+  // ─── Paid product: Razorpay 3-step flow ──────────────────────────
+  async function handlePaidPurchase() {
+    if (purchasing) return;
+    setPurchasing(true);
+
+    try {
+      // Step 1: Create Razorpay order on backend
+      const orderRes = await fetchAPI("/shop/razorpay/create-order/", {
+        method: "POST",
+        body: JSON.stringify({ product_id: productId }),
+      });
+      const order = orderRes.data || orderRes;
+
+      const userEmail = typeof window !== "undefined" ? localStorage.getItem("user_email") || "" : "";
+
+      // Step 2: Open Razorpay Checkout
+      await openRazorpayCheckout({
+        order,
+        name: "Bibleway",
+        description: product?.title || "Product Purchase",
+        email: userEmail,
+        onSuccess: async (response: RazorpayPaymentResponse) => {
+          try {
+            // Step 3: Verify payment
+            await fetchAPI("/shop/razorpay/verify/", {
+              method: "POST",
+              body: JSON.stringify({
+                product_id: productId,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
+            });
+
+            setPurchased(true);
+            showToast("success", "Purchase Complete!", `"${product?.title}" is now yours.`);
+          } catch (verifyErr: any) {
+            showToast(
+              "error",
+              "Verification Failed",
+              verifyErr?.message || "Payment succeeded but verification failed. Contact support."
+            );
+          }
+        },
+        onFailure: (errorMsg) => {
+          showToast("error", "Payment Failed", errorMsg);
+        },
+        onDismiss: () => {
+          // User closed the checkout modal
+        },
+      });
+    } catch (err: any) {
+      showToast("error", "Error", err.message || "Something went wrong. Please try again.");
+    } finally {
+      setPurchasing(false);
+    }
+  }
+
+  // ─── Download handler ────────────────────────────────────────────
   async function handleDownload() {
     setDownloading(true);
     try {
@@ -53,24 +118,27 @@ export default function ProductDetailPage() {
       const url = res.data?.url || res.url || res.data?.download_url || res.download_url;
       if (url) {
         window.open(url, "_blank");
+        showToast("success", "Downloading", "Your file is being downloaded.");
       } else {
-        alert("Download not available.");
+        showToast("error", "Download Error", "Download not available.");
       }
     } catch {
-      alert("Download failed.");
+      showToast("error", "Download Error", "Download failed. Please try again.");
     } finally {
       setDownloading(false);
     }
   }
 
+  // ─── Purchase click dispatcher ───────────────────────────────────
   function handlePurchaseClick() {
     if (product.is_free) {
-      handlePurchase();
+      handleFreeClaim();
     } else {
-      setShowConfirm(true);
+      handlePaidPurchase();
     }
   }
 
+  // ─── Loading state ───────────────────────────────────────────────
   if (loading) {
     return (
       <MainLayout>
@@ -92,6 +160,7 @@ export default function ProductDetailPage() {
     );
   }
 
+  // ─── Not found ───────────────────────────────────────────────────
   if (!product) {
     return (
       <MainLayout>
@@ -102,6 +171,13 @@ export default function ProductDetailPage() {
       </MainLayout>
     );
   }
+
+  // ─── Price display ───────────────────────────────────────────────
+  const priceDisplay = product.is_free
+    ? "FREE"
+    : product.price
+      ? `₹${product.price}`
+      : product.price_tier || "Paid";
 
   return (
     <MainLayout>
@@ -123,19 +199,25 @@ export default function ProductDetailPage() {
 
           {/* Product Info */}
           <div className="flex flex-col justify-center">
-            <div className="inline-block px-3 py-1 mb-4 rounded-full bg-tertiary-fixed/20 text-on-tertiary-fixed-variant text-[10px] font-bold uppercase tracking-widest w-fit">
+            <div className="inline-block px-3 py-1 mb-4 rounded-full bg-primary/10 text-primary dark:bg-primary/20 text-[10px] font-bold uppercase tracking-widest w-fit">
               {product.category || "Digital"}
             </div>
             <h1 className="text-4xl font-headline text-on-surface mb-4">{product.title}</h1>
-            <p className="text-2xl font-headline text-primary mb-6">
-              {product.is_free ? "FREE" : product.price_tier || `$${product.price || "Paid"}`}
-            </p>
+            <p className="text-2xl font-headline text-primary mb-6">{priceDisplay}</p>
             <p className="text-on-surface-variant leading-relaxed mb-8">{product.description}</p>
+
+            {product.download_count !== undefined && (
+              <p className="text-xs text-on-surface-variant/60 mb-6 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-sm">download</span>
+                {product.download_count} downloads
+              </p>
+            )}
 
             {purchased ? (
               <div className="space-y-4">
-                <div className="bg-green-50 text-green-700 p-4 rounded-xl text-sm font-medium text-center">
-                  Purchase successful! You can now download this item.
+                <div className="bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 p-4 rounded-xl text-sm font-medium text-center flex items-center justify-center gap-2">
+                  <span className="material-symbols-outlined text-lg">check_circle</span>
+                  You own this product
                 </div>
                 <button
                   onClick={handleDownload}
@@ -147,38 +229,35 @@ export default function ProductDetailPage() {
                 </button>
               </div>
             ) : (
-              <button
-                onClick={handlePurchaseClick}
-                className="w-full py-4 rounded-xl bg-linear-to-br from-primary to-primary-container text-on-primary font-semibold tracking-wide flex items-center justify-center gap-2 hover:opacity-90 transition-all"
-              >
-                <span className="material-symbols-outlined">{product.is_free ? "download" : "shopping_bag"}</span>
-                {product.is_free ? "Download Free" : "Purchase"}
-              </button>
+              <div className="space-y-3">
+                <button
+                  onClick={handlePurchaseClick}
+                  disabled={purchasing}
+                  className="w-full py-4 rounded-xl bg-linear-to-br from-primary to-primary-container text-on-primary font-semibold tracking-wide flex items-center justify-center gap-2 hover:opacity-90 transition-all disabled:opacity-50"
+                >
+                  {purchasing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-on-primary/30 border-t-on-primary" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined">{product.is_free ? "download" : "shopping_bag"}</span>
+                      {product.is_free ? "Download Free" : `Buy for ${priceDisplay}`}
+                    </>
+                  )}
+                </button>
+                {!product.is_free && (
+                  <p className="text-center text-xs text-on-surface-variant/50 flex items-center justify-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm">lock</span>
+                    Secure payment powered by Razorpay
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </div>
       </div>
-
-      {/* Confirmation Modal */}
-      {showConfirm && (
-        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-4" onClick={() => setShowConfirm(false)}>
-          <div className="bg-surface-container-lowest w-full max-w-sm rounded-2xl p-8 editorial-shadow text-center" onClick={(e) => e.stopPropagation()}>
-            <span className="material-symbols-outlined text-4xl text-primary mb-4 block">shopping_bag</span>
-            <h3 className="font-headline text-2xl mb-2">Confirm Purchase</h3>
-            <p className="text-on-surface-variant mb-6">
-              Are you sure you want to purchase <strong>{product.title}</strong>?
-            </p>
-            <div className="flex gap-3">
-              <button onClick={() => setShowConfirm(false)} className="flex-1 py-3 rounded-xl bg-surface-container-low text-on-surface-variant font-semibold hover:bg-surface-container-high transition-all">
-                Cancel
-              </button>
-              <button onClick={handlePurchase} disabled={purchasing} className="flex-1 py-3 rounded-xl bg-primary text-on-primary font-semibold hover:opacity-90 transition-all disabled:opacity-50">
-                {purchasing ? "Processing..." : "Confirm"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </MainLayout>
   );
 }

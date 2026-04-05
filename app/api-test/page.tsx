@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import MainLayout from "../components/MainLayout";
 import { fetchAPI } from "../lib/api";
 
@@ -16,6 +17,11 @@ const ENDPOINTS = [
 ];
 
 export default function ApiTestPage() {
+  const router = useRouter();
+  if (process.env.NODE_ENV === "production") {
+    router.replace("/");
+    return null;
+  }
   const [response, setResponse] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

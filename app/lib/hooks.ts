@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchAPI } from "./api";
 import { CACHE_DURATIONS } from "./cache";
+import { mapFeedItem } from "./mapFeedItem";
 
 // ═══════════════════════════════════════════════════════════════
 // BIBLE
@@ -110,7 +111,7 @@ export function useBookmarks() {
   return useQuery({
     queryKey: ["bookmarks"],
     queryFn: async () => {
-      const res = await fetchAPI("/bible/bookmarks/?type=api_bible");
+      const res = await fetchAPI("/bible/bookmarks/");
       return res?.data?.results || res?.results || res?.data || [];
     },
     ...CACHE_DURATIONS.bibleContent,
@@ -121,7 +122,7 @@ export function useHighlights() {
   return useQuery({
     queryKey: ["highlights"],
     queryFn: async () => {
-      const res = await fetchAPI("/bible/highlights/?type=api_bible");
+      const res = await fetchAPI("/bible/highlights/");
       return res?.data?.results || res?.results || res?.data || [];
     },
     ...CACHE_DURATIONS.bibleContent,
@@ -132,7 +133,7 @@ export function useNotes() {
   return useQuery({
     queryKey: ["notes"],
     queryFn: async () => {
-      const res = await fetchAPI("/bible/notes/?type=api_bible");
+      const res = await fetchAPI("/bible/notes/");
       return res?.data?.results || res?.results || res?.data || [];
     },
     ...CACHE_DURATIONS.bibleContent,
@@ -163,25 +164,8 @@ export function useFeed() {
         fetchAPI("/social/posts/").catch(() => null),
         fetchAPI("/social/prayers/").catch(() => null),
       ]);
-      const mapItem = (p: any, type: "post" | "prayer") => ({
-        id: p.id,
-        author: p.author?.full_name || "Anonymous",
-        authorId: p.author?.id,
-        authorPhoto: p.author?.profile_photo,
-        time: new Date(p.created_at).toLocaleDateString(),
-        rawDate: p.created_at,
-        title: p.title,
-        content: type === "post" ? p.text_content : p.description,
-        image: p.media?.[0]?.file,
-        likes: p.reaction_count ?? 0,
-        prayers: type === "prayer" ? (p.reaction_count ?? 0) : undefined,
-        comments: p.comment_count ?? 0,
-        type,
-        userReaction: p.user_reaction || null,
-        is_boosted: p.is_boosted || false,
-      });
-      const posts = (postsRes?.data?.results ?? postsRes?.results ?? []).map((p: any) => mapItem(p, "post"));
-      const prayers = (prayersRes?.data?.results ?? prayersRes?.results ?? []).map((p: any) => mapItem(p, "prayer"));
+      const posts = (postsRes?.data?.results ?? postsRes?.results ?? []).map((p: any) => mapFeedItem(p, "post"));
+      const prayers = (prayersRes?.data?.results ?? prayersRes?.results ?? []).map((p: any) => mapFeedItem(p, "prayer"));
       return [...posts, ...prayers].sort((a, b) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime());
     },
     ...CACHE_DURATIONS.feed,
@@ -428,8 +412,8 @@ export function useFollow() {
 export function useAddBookmark() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (verseRef: string) => {
-      return fetchAPI("/bible/bookmarks/", { method: "POST", body: JSON.stringify({ bookmark_type: "api_bible", verse_reference: verseRef }) });
+    mutationFn: async (payload: { bookmark_type: string; verse_reference?: string; content_type?: number; object_id?: string }) => {
+      return fetchAPI("/bible/bookmarks/", { method: "POST", body: JSON.stringify(payload) });
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["bookmarks"] }); },
   });
@@ -448,9 +432,8 @@ export function useRemoveBookmark() {
 export function useAddHighlight() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { verse_reference: string; color: string; selected_text?: string }) => {
-      const { selected_text, ...apiData } = data;
-      return fetchAPI("/bible/highlights/", { method: "POST", body: JSON.stringify({ highlight_type: "api_bible", ...apiData }) });
+    mutationFn: async (payload: { highlight_type: string; color: string; selected_text?: string; verse_reference?: string; content_type?: number; object_id?: string; selection_start?: number; selection_end?: number }) => {
+      return fetchAPI("/bible/highlights/", { method: "POST", body: JSON.stringify(payload) });
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["highlights"] }); },
   });
@@ -469,8 +452,8 @@ export function useRemoveHighlight() {
 export function useAddNote() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { verse_reference: string; text: string }) => {
-      return fetchAPI("/bible/notes/", { method: "POST", body: JSON.stringify({ note_type: "api_bible", ...data }) });
+    mutationFn: async (payload: { note_type: string; text: string; verse_reference?: string; content_type?: number; object_id?: string }) => {
+      return fetchAPI("/bible/notes/", { method: "POST", body: JSON.stringify(payload) });
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["notes"] }); },
   });
