@@ -98,7 +98,7 @@ export default function ChatPage() {
           {filtered.length > 0 ? (
             <div className="px-4 space-y-1 py-2">
               {filtered.map((conv) => {
-                const otherUser = conv.other_user || { full_name: "Chat" };
+                const otherUser = conv.other_user || { full_name: "Chat", profile_photo: null, age: 0, id: "" };
                 const lastTime = conv.last_message_at ? formatTime(conv.last_message_at) : "";
                 const hasUnread = conv.unread_count > 0;
 

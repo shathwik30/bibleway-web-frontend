@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import MainLayout from "../../components/MainLayout";
 
@@ -51,6 +52,11 @@ function formatTime() {
 }
 
 export default function DemoChatPage() {
+  const router = useRouter();
+  if (process.env.NODE_ENV === "production") {
+    router.replace("/chat");
+    return null;
+  }
   const [messages, setMessages] = useState<DemoMessage[]>([
     { id: 1, sender: "bot", text: "Hey! Welcome to BibleWay Chat. I'm Grace, your community assistant. Feel free to ask me anything about the app, Bible, or just chat!", time: formatTime(), replyTo: null },
   ]);

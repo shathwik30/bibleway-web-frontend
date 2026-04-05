@@ -89,7 +89,7 @@ export default function BibleStudyTools({ selectedBibleId, selectedChapterId, on
     setActivePanel(panel);
   }
 
-  const isBookmarked = bookmarks.some((bm) => bm.verse_reference === selectedChapterId);
+  const isBookmarked = bookmarks.some((bm: any) => bm.verse_reference === selectedChapterId);
 
   return (
     <div className={`space-y-4 ${reversed ? 'flex flex-col-reverse gap-4 [&>*]:!mt-0' : ''}`}>
@@ -113,7 +113,7 @@ export default function BibleStudyTools({ selectedBibleId, selectedChapterId, on
       {selectedChapterId && (
         <div className="flex gap-2 flex-wrap items-center">
           <button
-            onClick={() => { if (isBookmarked) { const bm = bookmarks.find(b => b.verse_reference === selectedChapterId); if (bm) removeBookmark(bm.id); } else addBookmark(); }}
+            onClick={() => { if (isBookmarked) { const bm = bookmarks.find((b: any) => b.verse_reference === selectedChapterId); if (bm) removeBookmark(bm.id); } else addBookmark(); }}
             className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${isBookmarked ? "bg-primary/20 text-primary" : "bg-primary/10 text-primary hover:bg-primary/20"}`}
             title={isBookmarked ? "Remove bookmark" : "Bookmark this chapter"}
           >

@@ -13,14 +13,8 @@ import { useTranslation } from "./lib/i18n";
 import VerseOnboarding from "./components/VerseOnboarding";
 import VerseShareDropdown from "./components/VerseShareCard";
 import { useToast } from "./components/Toast";
-
-const BACKGROUNDS = [
-  "mountain-bg.png",
-  "forest-bg.png",
-  "ocean-bg.png",
-  "aurora-bg.png",
-  "desert-bg.png"
-];
+import { REACTIONS, VERSE_BACKGROUNDS } from "./lib/constants";
+import { mapFeedItem } from "./lib/mapFeedItem";
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<"post" | "prayer">("post");
@@ -51,13 +45,8 @@ export default function HomePage() {
   // Reaction debounce - prevent rapid-fire clicks
   const reactingPosts = useRef<Set<string>>(new Set());
 
-  // Unified toast
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   function showToast(msg: string) {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast(msg);
-    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+    showSystemToast("info", "", msg);
   }
 
   // Infinite scroll state
@@ -71,14 +60,20 @@ export default function HomePage() {
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   // Verse navigation
-  const [verseDate, setVerseDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
-  const today = new Date().toISOString().split("T")[0];
+  const [verseDate, setVerseDate] = useState<string>("");
+  const [today, setToday] = useState<string>("");
 
   const { t } = useTranslation();
   const reactionRef = useRef<HTMLDivElement>(null);
   const [bgIndex, setBgIndex] = useState(0);
-  useEffect(() => { setBgIndex(new Date().getDay() % BACKGROUNDS.length); }, []);
-  const currentBg = BACKGROUNDS[bgIndex];
+  useEffect(() => {
+    const now = new Date();
+    const dateStr = now.toISOString().split("T")[0];
+    setVerseDate(dateStr);
+    setToday(dateStr);
+    setBgIndex(now.getDay() % VERSE_BACKGROUNDS.length);
+  }, []);
+  const currentBg = VERSE_BACKGROUNDS[bgIndex];
 
   // Close reaction picker + verse share on outside click
   useEffect(() => {
@@ -103,27 +98,8 @@ export default function HomePage() {
         fetchAPI("/social/prayers/").catch(() => null)
       ]);
 
-      const mapItem = (p: any, type: "post" | "prayer") => ({
-        id: p.id,
-        author: p.author?.full_name || "Anonymous",
-        authorId: p.author?.id,
-        authorPhoto: p.author?.profile_photo,
-        time: new Date(p.created_at).toLocaleDateString(),
-        rawDate: p.created_at,
-        title: p.title,
-        content: type === "post" ? p.text_content : p.description,
-        image: p.media?.[0]?.file,
-        media: p.media || [],
-        likes: p.reaction_count ?? 0,
-        prayers: type === "prayer" ? (p.reaction_count ?? 0) : undefined,
-        comments: p.comment_count ?? 0,
-        type,
-        userReaction: p.user_reaction || null,
-        is_boosted: p.is_boosted || false,
-      });
-
-      const posts = (postsRes?.data?.results ?? postsRes?.results ?? []).map((p: any) => mapItem(p, "post"));
-      const prayers = (prayersRes?.data?.results ?? prayersRes?.results ?? []).map((p: any) => mapItem(p, "prayer"));
+      const posts = (postsRes?.data?.results ?? postsRes?.results ?? []).map((p: any) => mapFeedItem(p, "post"));
+      const prayers = (prayersRes?.data?.results ?? prayersRes?.results ?? []).map((p: any) => mapFeedItem(p, "prayer"));
 
       // Track pagination cursor from posts response
       const nextUrl = postsRes?.data?.next ?? postsRes?.next ?? null;
@@ -179,14 +155,6 @@ export default function HomePage() {
   }, [activeTab]);
 
   const displayedPosts = feedPosts.filter((post) => post.type === activeTab);
-
-  const REACTIONS = [
-    { type: "praying_hands", emoji: "\u{1F64F}" },
-    { type: "heart", emoji: "\u2764\uFE0F" },
-    { type: "fire", emoji: "\u{1F525}" },
-    { type: "amen", emoji: "\u{1F64C}" },
-    { type: "cross", emoji: "\u271D\uFE0F" },
-  ];
 
   async function handleReact(postId: string, postType: string, emojiType: string) {
     // Prevent rapid-fire clicks while a reaction is in-flight
@@ -299,35 +267,12 @@ export default function HomePage() {
     if (!nextPageUrl || loadingMore) return;
     setLoadingMore(true);
     try {
-      // Extract cursor/page param from nextPageUrl
       const urlObj = new URL(nextPageUrl);
-      const cursor = urlObj.searchParams.get("cursor") || urlObj.searchParams.get("page") || "";
-      const separator = nextPageUrl.includes("?") ? "" : "";
-      // Build the endpoint with the cursor param
       const params = urlObj.search;
       const endpoint = `/social/posts/${params}`;
       const res = await fetchAPI(endpoint);
 
-      const mapItem = (p: any, type: "post" | "prayer") => ({
-        id: p.id,
-        author: p.author?.full_name || "Anonymous",
-        authorId: p.author?.id,
-        authorPhoto: p.author?.profile_photo,
-        time: new Date(p.created_at).toLocaleDateString(),
-        rawDate: p.created_at,
-        title: p.title,
-        content: type === "post" ? p.text_content : p.description,
-        image: p.media?.[0]?.file,
-        media: p.media || [],
-        likes: p.reaction_count ?? 0,
-        prayers: type === "prayer" ? (p.reaction_count ?? 0) : undefined,
-        comments: p.comment_count ?? 0,
-        type,
-        userReaction: p.user_reaction || null,
-        is_boosted: p.is_boosted || false,
-      });
-
-      const newPosts = (res?.data?.results ?? res?.results ?? []).map((p: any) => mapItem(p, "post"));
+      const newPosts = (res?.data?.results ?? res?.results ?? []).map((p: any) => mapFeedItem(p, "post"));
       const newNextUrl = res?.data?.next ?? res?.next ?? null;
       setNextPageUrl(newNextUrl);
       setFeedPosts((prev) => {
@@ -399,11 +344,6 @@ export default function HomePage() {
 
   return (
     <MainLayout>
-      <style jsx global>{`
-        @keyframes reactionPop { 0% { transform: scale(0.3); opacity: 0; } 50% { transform: scale(1.4); opacity: 1; } 70% { transform: scale(0.9); } 100% { transform: scale(1); opacity: 0; } }
-        .reaction-animate { animation: reactionPop 0.7s ease-out forwards; position: absolute; font-size: 2rem; pointer-events: none; z-index: 50; }
-      `}</style>
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 flex flex-col xl:flex-row gap-8 xl:gap-12">
         <section className="flex-1 space-y-12">
           {/* Verse Header */}
@@ -617,12 +557,6 @@ export default function HomePage() {
       )}
 
       {/* Unified Toast */}
-      {toast && createPortal(
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-on-surface text-surface px-6 py-3 rounded-full shadow-xl z-[20000] text-sm font-medium animate-in fade-in slide-in-from-bottom-2 duration-200">
-          {toast}
-        </div>,
-        document.body
-      )}
       {/* Floating Action Button for creating posts — portaled to escape overflow */}
       {isLoggedIn && typeof document !== "undefined" && createPortal(
         <button

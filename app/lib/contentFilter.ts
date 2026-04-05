@@ -21,7 +21,7 @@ const BAD_WORDS = [
 // Build regex pattern (word boundaries, case insensitive)
 const pattern = new RegExp(
   "\\b(" + BAD_WORDS.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")\\b",
-  "gi"
+  "i"
 );
 
 // Also match l33tspeak common substitutions
@@ -47,9 +47,12 @@ export function containsProfanity(text: string): boolean {
 /**
  * Censor profanity in text (replace with asterisks).
  */
+// Separate pattern with `g` flag for replacement (stateless per call since replace resets it)
+const replacePattern = new RegExp(pattern.source, "gi");
+
 export function censorText(text: string): string {
   if (!text) return text;
-  return text.replace(pattern, (match) => "*".repeat(match.length));
+  return text.replace(replacePattern, (match) => "*".repeat(match.length));
 }
 
 /**

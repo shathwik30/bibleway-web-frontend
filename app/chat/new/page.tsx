@@ -53,13 +53,18 @@ export default function NewChatPage() {
     }
     setError("");
     setStarting(user.id);
-    const conv = await startConversation(user.id);
-    if (conv?.id) {
-      router.push(`/chat/${conv.id}`);
-    } else {
+    try {
+      const conv = await startConversation(user.id);
+      if (conv?.id) {
+        router.push(`/chat/${conv.id}`);
+        return;
+      }
       setError("Failed to start conversation. Please try again.");
-      setStarting(null);
+    } catch (err: any) {
+      const msg = err?.message || "Failed to start conversation.";
+      setError(msg.includes("API error") ? "Something went wrong. Please try again." : msg);
     }
+    setStarting(null);
   }
 
   return (

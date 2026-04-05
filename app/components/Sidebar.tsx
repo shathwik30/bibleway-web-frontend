@@ -7,17 +7,9 @@ import { useTranslation } from "../lib/i18n";
 import { useTheme } from "../lib/ThemeContext";
 import { fetchAPI } from "../lib/api";
 
-const LANGUAGES = [
-  { code: "en", label: "English", flag: "🇺🇸" },
-  { code: "es", label: "Español", flag: "🇪🇸" },
-  { code: "fr", label: "Français", flag: "🇫🇷" },
-  { code: "hi", label: "हिन्दी", flag: "🇮🇳" },
-  { code: "pt", label: "Português", flag: "🇧🇷" },
-  { code: "ar", label: "العربية", flag: "🇸🇦" },
-  { code: "sw", label: "Kiswahili", flag: "🇰🇪" },
-];
+import { LANGUAGES } from "../lib/constants";
 
-const sideLinks = [
+const sideLinks: { href: string; label: string; icon: string; isComingSoon?: boolean }[] = [
   { href: "/", label: "Home", icon: "home" },
   { href: "/bible", label: "Bible", icon: "menu_book" },
   { href: "/shop", label: "Shop", icon: "shopping_bag" },
@@ -39,8 +31,11 @@ export default function Sidebar({ collapsed }: SidebarProps) {
   const themeRef = useRef<HTMLDivElement>(null);
 
   // On tablet (md to lg), always render as collapsed regardless of prop
+  // Use CSS media queries for initial render to avoid hydration mismatch
   const [isTablet, setIsTablet] = useState(false);
+  const [mounted, setMounted] = useState(false);
   useEffect(() => {
+    setMounted(true);
     function check() {
       const w = window.innerWidth;
       setIsTablet(w >= 768 && w < 1024);
@@ -49,7 +44,7 @@ export default function Sidebar({ collapsed }: SidebarProps) {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
-  const isCollapsed = collapsed || isTablet;
+  const isCollapsed = collapsed || (mounted && isTablet);
 
   const themeIcon = theme === "system" ? "brightness_auto" : resolvedTheme === "dark" ? "dark_mode" : "light_mode";
   const themeLabel = theme === "system" ? "System" : resolvedTheme === "dark" ? "Dark" : "Light";

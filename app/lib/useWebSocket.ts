@@ -32,6 +32,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     }
 
     const baseUrl = (process.env.NEXT_PUBLIC_WS_URL || process.env.NEXT_PUBLIC_API_URL || "https://api-bibleway.up.railway.app")
+      .replace(/\/+$/, "")          // strip trailing slashes first
       .replace(/^http/, "ws")
       .replace(/\/api\/v1$/, "");
 

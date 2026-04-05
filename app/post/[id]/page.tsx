@@ -8,13 +8,7 @@ import { fetchAPI } from "../../lib/api";
 import { containsProfanity, getProfanityWarning } from "../../lib/contentFilter";
 import { useToast } from "../../components/Toast";
 
-const REACTIONS = [
-  { type: "praying_hands", emoji: "🙏", label: "Praying Hands" },
-  { type: "heart", emoji: "❤️", label: "Heart" },
-  { type: "fire", emoji: "🔥", label: "Fire" },
-  { type: "amen", emoji: "🙌", label: "Amen" },
-  { type: "cross", emoji: "✝️", label: "Cross" },
-];
+import { REACTIONS } from "../../lib/constants";
 
 function PostDetailCarousel({ media }: { media: { id?: string; file: string; media_type: string }[] }) {
   const [activeIndex, setActiveIndex] = useState(0);

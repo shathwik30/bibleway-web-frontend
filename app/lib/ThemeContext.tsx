@@ -23,7 +23,13 @@ function getSystemTheme(): "light" | "dark" {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("system");
-  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
+  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(() => {
+    if (typeof document !== "undefined") {
+      const current = document.documentElement.getAttribute("data-theme");
+      if (current === "dark") return "dark";
+    }
+    return "light";
+  });
 
   const applyTheme = useCallback((t: Theme) => {
     const resolved = t === "system" ? getSystemTheme() : t;

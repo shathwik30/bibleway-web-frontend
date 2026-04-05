@@ -2,23 +2,11 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import DOMPurify from "dompurify";
 import GoogleSignInButton from "../../../components/GoogleSignInButton";
 import Footer from "../../../components/Footer";
 import { useTheme } from "../../../lib/ThemeContext";
 import { useToast } from "../../../components/Toast";
-
-function sanitizeHTML(html: string): string {
-  if (typeof window === "undefined") return html;
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: [
-      "p", "br", "b", "i", "em", "strong", "span", "div",
-      "h1", "h2", "h3", "h4", "h5", "h6",
-      "blockquote", "ul", "ol", "li", "a", "sup", "sub",
-    ],
-    ALLOWED_ATTR: ["class", "href", "target", "rel"],
-  });
-}
+import { sanitizeHTML } from "../../../lib/sanitize";
 
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();

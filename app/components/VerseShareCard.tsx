@@ -8,13 +8,7 @@ interface VerseShareCardProps {
   backgroundImage?: string;
 }
 
-const BACKGROUNDS = [
-  "mountain-bg.png",
-  "forest-bg.png",
-  "ocean-bg.png",
-  "aurora-bg.png",
-  "desert-bg.png",
-];
+import { VERSE_BACKGROUNDS as BACKGROUNDS } from "../lib/constants";
 
 export function useVerseCardGenerator() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);

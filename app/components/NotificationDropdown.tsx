@@ -36,9 +36,11 @@ export default function NotificationDropdown() {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Fetch on mount + poll every 15 seconds
     fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 15000);
+    // Poll every 60s, pause when tab is hidden
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") fetchUnreadCount();
+    }, 60000);
     return () => clearInterval(interval);
   }, []);
 

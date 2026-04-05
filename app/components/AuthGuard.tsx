@@ -12,6 +12,7 @@ const PUBLIC_PATHS = [
   "/verify-email",
   "/complete-profile",
   "/landing",
+  "/launch",
 ];
 
 function isPublicPath(pathname: string): boolean {

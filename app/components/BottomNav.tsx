@@ -7,15 +7,7 @@ import { useTranslation } from "../lib/i18n";
 import { useTheme } from "../lib/ThemeContext";
 import { fetchAPI } from "../lib/api";
 
-const LANGUAGES = [
-  { code: "en", label: "English", flag: "🇺🇸" },
-  { code: "es", label: "Español", flag: "🇪🇸" },
-  { code: "fr", label: "Français", flag: "🇫🇷" },
-  { code: "hi", label: "हिन्दी", flag: "🇮🇳" },
-  { code: "pt", label: "Português", flag: "🇧🇷" },
-  { code: "ar", label: "العربية", flag: "🇸🇦" },
-  { code: "sw", label: "Kiswahili", flag: "🇰🇪" },
-];
+import { LANGUAGES } from "../lib/constants";
 
 export default function BottomNav() {
   const pathname = usePathname();

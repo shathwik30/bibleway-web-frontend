@@ -3,7 +3,7 @@
 import Link from "next/link";
 import MainLayout from "../components/MainLayout";
 
-const GAMES = [
+const GAMES: { id: string; title: string; description: string; icon: string; href: string; players: string; comingSoon?: boolean }[] = [
   {
     id: "tic-tac-toe",
     title: "Tic Tac Toe",

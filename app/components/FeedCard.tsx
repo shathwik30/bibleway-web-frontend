@@ -34,13 +34,7 @@ interface FeedPost {
   is_boosted?: boolean;
 }
 
-const REACTIONS = [
-  { type: "praying_hands", emoji: "\u{1F64F}", label: "Praying Hands" },
-  { type: "heart", emoji: "\u2764\uFE0F", label: "Heart" },
-  { type: "fire", emoji: "\u{1F525}", label: "Fire" },
-  { type: "amen", emoji: "\u{1F64C}", label: "Amen" },
-  { type: "cross", emoji: "\u271D\uFE0F", label: "Cross" },
-];
+import { REACTIONS } from "../lib/constants";
 
 function MediaLightbox({ src, mediaType, onClose }: { src: string; mediaType: string; onClose: () => void }) {
   useEffect(() => {

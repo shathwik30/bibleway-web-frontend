@@ -9,15 +9,7 @@ import { useTranslation } from "../lib/i18n";
 import { useTheme } from "../lib/ThemeContext";
 import { useToast } from "../components/Toast";
 
-const LANGUAGES = [
-  { code: "en", name: "English" },
-  { code: "es", name: "Español" },
-  { code: "fr", name: "Français" },
-  { code: "hi", name: "Hindi (हिन्दी)" },
-  { code: "pt", name: "Português" },
-  { code: "ar", name: "العربية (Arabic)" },
-  { code: "sw", name: "Kiswahili" },
-];
+import { LANGUAGES } from "../lib/constants";
 
 export default function SettingsPage() {
   const router = useRouter();

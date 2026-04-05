@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchAPI } from "./api";
 import { CACHE_DURATIONS } from "./cache";
+import { mapFeedItem } from "./mapFeedItem";
 
 // ═══════════════════════════════════════════════════════════════
 // BIBLE
@@ -163,25 +164,8 @@ export function useFeed() {
         fetchAPI("/social/posts/").catch(() => null),
         fetchAPI("/social/prayers/").catch(() => null),
       ]);
-      const mapItem = (p: any, type: "post" | "prayer") => ({
-        id: p.id,
-        author: p.author?.full_name || "Anonymous",
-        authorId: p.author?.id,
-        authorPhoto: p.author?.profile_photo,
-        time: new Date(p.created_at).toLocaleDateString(),
-        rawDate: p.created_at,
-        title: p.title,
-        content: type === "post" ? p.text_content : p.description,
-        image: p.media?.[0]?.file,
-        likes: p.reaction_count ?? 0,
-        prayers: type === "prayer" ? (p.reaction_count ?? 0) : undefined,
-        comments: p.comment_count ?? 0,
-        type,
-        userReaction: p.user_reaction || null,
-        is_boosted: p.is_boosted || false,
-      });
-      const posts = (postsRes?.data?.results ?? postsRes?.results ?? []).map((p: any) => mapItem(p, "post"));
-      const prayers = (prayersRes?.data?.results ?? prayersRes?.results ?? []).map((p: any) => mapItem(p, "prayer"));
+      const posts = (postsRes?.data?.results ?? postsRes?.results ?? []).map((p: any) => mapFeedItem(p, "post"));
+      const prayers = (prayersRes?.data?.results ?? prayersRes?.results ?? []).map((p: any) => mapFeedItem(p, "prayer"));
       return [...posts, ...prayers].sort((a, b) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime());
     },
     ...CACHE_DURATIONS.feed,

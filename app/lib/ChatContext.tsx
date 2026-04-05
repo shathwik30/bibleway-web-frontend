@@ -206,6 +206,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   // ------------------------------------------------------------------
 
   const loadConversations = useCallback(async () => {
+    // Skip if user is not logged in
+    if (typeof window !== "undefined" && !localStorage.getItem("access_token")) return;
     try {
       const res = await fetchAPI("/chat/conversations/");
       const convs = res?.data?.results || res?.results || [];
@@ -226,7 +228,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         }
       }
       prevUnreadRef.current = totalUnread;
-    } catch { /* failed to load conversations */ }
+    } catch (err: any) {
+      console.error("Failed to load conversations:", err.message);
+    }
   }, [showToast]);
 
   const loadMessages = useCallback(async (convId: string) => {
@@ -243,7 +247,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       });
       setMessages(prev => ({ ...prev, [convId]: deduped }));
       joinedConvsRef.current.add(convId);
-    } catch { /* failed to load messages */ }
+    } catch (err: any) {
+      console.error("Failed to load messages:", err.message);
+    }
 
     // Join conversation group via WS for real-time updates
     if (connected) {
@@ -315,14 +321,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           ),
         }));
       }
-    } catch {
+    } catch (err: any) {
+      console.error("Send message failed:", err.message);
+      showToast("error", "Failed to send message", err.message || "Please try again.");
       // Remove optimistic message on failure
       setMessages(prev => ({
         ...prev,
         [convId]: (prev[convId] || []).filter(m => m.id !== tempId),
       }));
     }
-  }, [connected, send]);
+  }, [connected, send, showToast]);
 
   const markRead = useCallback(async (convId: string) => {
     setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 0 } : c));
@@ -364,8 +372,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         await loadConversations();
         return conv;
       }
-    } catch { /* failed */ }
-    return null;
+      throw new Error("No conversation returned from server.");
+    } catch (err: any) {
+      console.error("Start conversation failed:", err.message);
+      // Re-throw so the caller (new chat page) can show a specific error
+      throw err;
+    }
   }, [loadConversations]);
 
   // ------------------------------------------------------------------

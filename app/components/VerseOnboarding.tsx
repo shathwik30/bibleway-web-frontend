@@ -13,13 +13,7 @@ interface VerseOnboardingProps {
 
 const EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
 
-const BACKGROUNDS = [
-  "mountain-bg.png",
-  "forest-bg.png",
-  "ocean-bg.png",
-  "aurora-bg.png",
-  "desert-bg.png",
-];
+import { VERSE_BACKGROUNDS as BACKGROUNDS } from "../lib/constants";
 
 export default function VerseOnboarding({ verseText, verseReference, onDismiss, onToast }: VerseOnboardingProps) {
   // Phases: black → bg → text → logo → actions → exit

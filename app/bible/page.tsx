@@ -1,10 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback, Suspense } from "react";
-import ReactDOM from "react-dom";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import { marked } from "marked";
-import DOMPurify from "dompurify";
 import MainLayout from "../components/MainLayout";
 import { fetchAPI } from "../lib/api";
 import Shimmer from "../components/Shimmer";
@@ -14,16 +13,9 @@ import YouTubeSermons from "../components/YouTubeSermons";
 import { useBibles, useBooks, useChapters, useChapterContent, useStudySections, useStudyChapters, useStudyPages, useStudyPageDetail, useBookmarks, useAddBookmark, useRemoveBookmark, useNotes, useAddNote, useRemoveNote, useUpdateNote, useHighlights, useAddHighlight, useRemoveHighlight, useBibleSearch, useApiBibleSearch } from "../lib/hooks";
 import { translateText, LANGUAGES, DEFAULT_LANGUAGE, type Language } from "../lib/translate";
 import { useToast } from "../components/Toast";
+import { sanitizeHTML } from "../lib/sanitize";
 
 marked.setOptions({ breaks: true, gfm: true });
-
-function sanitizeHTML(html: string): string {
-  if (typeof window === "undefined") return html;
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: ["p", "br", "b", "i", "em", "strong", "span", "div", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "ul", "ol", "li", "a", "sup", "sub"],
-    ALLOWED_ATTR: ["class", "href", "target", "rel"],
-  });
-}
 
 // ─── Book name mapping for readable display ───────────────────
 const BOOK_NAMES: Record<string, string> = {
@@ -365,10 +357,10 @@ function BibleContent() {
 
   const [selectionPopup, setSelectionPopup] = useState<{ text: string; x: number; y: number; start: number; end: number } | null>(null);
   const [popupColor, setPopupColor] = useState("yellow");
-  const articleRef = React.useRef<HTMLDivElement>(null);
+  const articleRef = useRef<HTMLDivElement>(null);
 
   // Listen for text selection inside the bible article or study section
-  React.useEffect(() => {
+  useEffect(() => {
     function handleMouseUp() {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.toString().trim()) {
@@ -465,9 +457,9 @@ function BibleContent() {
   // Bibles, books, chapters, content all loaded via React Query hooks above
 
   // ─── Browser back/forward button support ────────────────────
-  const isRestoringRef = React.useRef(false);
+  const isRestoringRef = useRef(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!window.history.state?.bibleStep) {
       window.history.replaceState({ bibleStep: "pick-bible", tab: "standard" }, "");
     }
@@ -663,14 +655,14 @@ function BibleContent() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {bibles.filter((b) => {
+                    {bibles.filter((b: any) => {
                       if (!searchQuery.trim()) return true;
                       const q = searchQuery.toLowerCase();
                       return (b.nameLocal || b.name || "").toLowerCase().includes(q)
                         || (b.abbreviation || "").toLowerCase().includes(q)
                         || (b.description || "").toLowerCase().includes(q)
                         || (b.language?.nameLocal || "").toLowerCase().includes(q);
-                    }).map((b) => (
+                    }).map((b: any) => (
                       <button
                         key={b.id}
                         onClick={() => handlePickBible(b)}
@@ -707,11 +699,11 @@ function BibleContent() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {books.filter((b) => {
+                    {books.filter((b: any) => {
                       if (!searchQuery.trim()) return true;
                       const q = searchQuery.toLowerCase();
                       return (b.name || "").toLowerCase().includes(q) || (b.abbreviation || "").toLowerCase().includes(q);
-                    }).map((b) => (
+                    }).map((b: any) => (
                       <button
                         key={b.id}
                         onClick={() => handlePickBook(b)}
@@ -739,7 +731,7 @@ function BibleContent() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-6 sm:grid-cols-8 lg:grid-cols-10 gap-3">
-                    {chapters.map((ch) => (
+                    {chapters.map((ch: any) => (
                       <button
                         key={ch.id}
                         onClick={() => handlePickChapter(ch.id)}
@@ -909,7 +901,7 @@ function BibleContent() {
         )}
 
         {/* ═══ Mobile FAB for Standard Reader (portaled to body) ═══ */}
-        {activeTab === "standard" && readerStep === "reading" && typeof document !== "undefined" && ReactDOM.createPortal(
+        {activeTab === "standard" && readerStep === "reading" && typeof document !== "undefined" && createPortal(
           <>
             <div className="xl:hidden fixed bottom-24 right-5 z-[9999] print:hidden">
               <button
@@ -989,7 +981,7 @@ function BibleContent() {
                   </div>
                 ) : sections.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {sections.map((s) => (
+                    {sections.map((s: any) => (
                       <button
                         key={s.id}
                         onClick={() => handlePickSection(s)}
@@ -1027,7 +1019,7 @@ function BibleContent() {
                   </div>
                 ) : studyChapters.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {studyChapters.map((c) => (
+                    {studyChapters.map((c: any) => (
                       <button
                         key={c.id}
                         onClick={() => handlePickModule(c)}
@@ -1223,7 +1215,7 @@ function BibleContent() {
         )}
 
         {/* ═══ Mobile FAB for Study section (portaled to body) ═══ */}
-        {activeTab === "study" && studyStep === "reading" && typeof document !== "undefined" && ReactDOM.createPortal(
+        {activeTab === "study" && studyStep === "reading" && typeof document !== "undefined" && createPortal(
           <>
             <div className="xl:hidden fixed bottom-24 right-5 z-[9999] print:hidden">
               <button

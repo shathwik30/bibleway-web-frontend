@@ -16,16 +16,18 @@ export default function MainLayout({
   children,
   hideFooter = false,
 }: MainLayoutProps) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("sidebar_collapsed") === "true";
-    }
-    return false;
-  });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem("sidebar_collapsed", String(sidebarCollapsed));
-  }, [sidebarCollapsed]);
+    const stored = localStorage.getItem("sidebar_collapsed") === "true";
+    setSidebarCollapsed(stored);
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (hydrated) localStorage.setItem("sidebar_collapsed", String(sidebarCollapsed));
+  }, [sidebarCollapsed, hydrated]);
 
   return (
     <AuthGuard>
