@@ -27,6 +27,7 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
   const [mediaKeys, setMediaKeys] = useState<string[]>([]);
   const [mediaTypes, setMediaTypes] = useState<string[]>([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [cropQueue, setCropQueue] = useState<{ file: File; src: string }[]>([]);
   const [croppedFiles, setCroppedFiles] = useState<File[]>([]);
   const mediaInputRef = useRef<HTMLInputElement>(null);
@@ -64,25 +65,24 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
   function handleCropDone(blob: Blob) {
     const current = cropQueue[0];
     const file = new File([blob], current.file.name, { type: "image/jpeg" });
-    setCroppedFiles((prev) => [...prev, file]);
     URL.revokeObjectURL(current.src);
     const remaining = cropQueue.slice(1);
     setCropQueue(remaining);
 
-    // If no more to crop, upload all cropped files
     if (remaining.length === 0) {
+      // Last image — upload all accumulated files plus this one
       setCroppedFiles((prev) => {
         const allFiles = [...prev, file];
         uploadFiles(allFiles);
         return [];
       });
+    } else {
+      setCroppedFiles((prev) => [...prev, file]);
     }
   }
 
   function handleCropSkip() {
     const current = cropQueue[0];
-    // Use original file without cropping
-    setCroppedFiles((prev) => [...prev, current.file]);
     URL.revokeObjectURL(current.src);
     const remaining = cropQueue.slice(1);
     setCropQueue(remaining);
@@ -93,11 +93,14 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
         uploadFiles(allFiles);
         return [];
       });
+    } else {
+      setCroppedFiles((prev) => [...prev, current.file]);
     }
   }
 
   async function uploadFiles(files: File[]) {
     setUploadingMedia(true);
+    setUploadError(null);
     const newPreviews = files.map((f) => URL.createObjectURL(f));
     setMediaPreviews((prev) => [...prev, ...newPreviews]);
 
@@ -110,8 +113,9 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
       const newTypes = files.map((f) => f.type.startsWith("video/") ? "video" : "image");
       setMediaKeys((prev) => [...prev, ...newKeys]);
       setMediaTypes((prev) => [...prev, ...newTypes]);
-    } catch {
+    } catch (err) {
       setMediaPreviews((prev) => prev.slice(0, prev.length - newPreviews.length));
+      setUploadError(err instanceof Error ? err.message : "Failed to upload media. Please try again.");
     } finally {
       setUploadingMedia(false);
     }
@@ -230,6 +234,12 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
 
         {/* Body */}
         <div className="px-6 sm:px-8 py-6 space-y-4 overflow-y-auto flex-1">
+          {uploadError && (
+            <div className="flex items-center gap-2 text-sm text-error bg-error-container/20 px-4 py-3 rounded-xl">
+              <span className="material-symbols-outlined text-sm">error</span>
+              {uploadError}
+            </div>
+          )}
           {mediaPreviews.length > 0 && (
             <div className="grid grid-cols-2 gap-2">
               {mediaPreviews.map((preview, i) => (

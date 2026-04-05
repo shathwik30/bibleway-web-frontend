@@ -99,7 +99,7 @@ export default function CompleteProfilePage() {
       formData.append("username", username.trim());
       formData.append("date_of_birth", dateOfBirth);
       formData.append("country", country);
-      if (photo) formData.append("profile_picture", photo);
+      if (photo) formData.append("profile_photo", photo);
 
       await fetchAPI("/accounts/profile/", {
         method: "PATCH",
