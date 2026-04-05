@@ -19,10 +19,15 @@ export default function RecommendedPeople() {
         const data = res?.data?.results ?? res?.results ?? res?.data ?? [];
         const filtered = Array.isArray(data) ? data.filter((u: any) => u.id !== currentUserId) : [];
         setPeople(filtered.slice(0, 5));
-        // Pre-populate already-following users
-        const alreadyFollowing = new Set<string>();
-        filtered.forEach((u: any) => { if (u.is_following) alreadyFollowing.add(u.id); });
-        setFollowingIds(alreadyFollowing);
+        // Pre-populate follow state from current user's following list
+        if (currentUserId) {
+          try {
+            const followingRes = await fetchAPI(`/accounts/users/${currentUserId}/following/`);
+            const followingRaw = followingRes?.data?.results || followingRes?.results || followingRes?.data || [];
+            const ids = new Set<string>(followingRaw.map((r: any) => r.following?.id).filter(Boolean));
+            setFollowingIds(ids);
+          } catch { /* ignore */ }
+        }
       } catch { /* failed */ } finally {
         setLoading(false);
       }

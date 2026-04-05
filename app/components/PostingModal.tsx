@@ -30,6 +30,9 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
   const [mediaTypes, setMediaTypes] = useState<string[]>([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [cropQueue, setCropQueue] = useState<{ file: File; src: string }[]>([]);
+  const [croppedFiles, setCroppedFiles] = useState<File[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const [mounted, setMounted] = useState(false);
@@ -49,6 +52,75 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
     const selected = Array.from(files).slice(0, remaining);
     if (selected.length === 0) return;
 
+    // Videos go straight to upload, images go to crop queue
+    const videos = selected.filter((f) => f.type.startsWith("video/"));
+    const images = selected.filter((f) => !f.type.startsWith("video/"));
+
+    if (videos.length > 0) uploadFiles(videos);
+
+    if (images.length > 0) {
+      const queue = images.map((f) => ({ file: f, src: URL.createObjectURL(f) }));
+      setCropQueue(queue);
+    }
+  }
+
+  function handleCropDone(blob: Blob) {
+    const current = cropQueue[0];
+    const file = new File([blob], current.file.name, { type: "image/jpeg" });
+    URL.revokeObjectURL(current.src);
+    const remaining = cropQueue.slice(1);
+    setCropQueue(remaining);
+
+    if (remaining.length === 0) {
+      // Last image — upload all accumulated files plus this one
+      setCroppedFiles((prev) => {
+        const allFiles = [...prev, file];
+        uploadFiles(allFiles);
+        return [];
+      });
+    } else {
+      setCroppedFiles((prev) => [...prev, file]);
+    }
+  }
+
+  function handleCropSkip() {
+    const current = cropQueue[0];
+    URL.revokeObjectURL(current.src);
+    const remaining = cropQueue.slice(1);
+    setCropQueue(remaining);
+
+    if (remaining.length === 0) {
+      setCroppedFiles((prev) => {
+        const allFiles = [...prev, current.file];
+        uploadFiles(allFiles);
+        return [];
+      });
+    } else {
+      setCroppedFiles((prev) => [...prev, current.file]);
+    }
+  }
+
+  async function uploadFiles(files: File[]) {
+    setUploadingMedia(true);
+    setUploadError(null);
+    const newPreviews = files.map((f) => URL.createObjectURL(f));
+    setMediaPreviews((prev) => [...prev, ...newPreviews]);
+
+    try {
+      const formData = new FormData();
+      files.forEach((file) => formData.append("files", file));
+      const res = await fetchAPI("/social/media/upload/", { method: "POST", body: formData });
+      const results: { key: string; url: string }[] = res.data || res || [];
+      const newKeys = results.map((r) => r.key);
+      const newTypes = files.map((f) => f.type.startsWith("video/") ? "video" : "image");
+      setMediaKeys((prev) => [...prev, ...newKeys]);
+      setMediaTypes((prev) => [...prev, ...newTypes]);
+    } catch (err) {
+      setMediaPreviews((prev) => prev.slice(0, prev.length - newPreviews.length));
+      setUploadError(err instanceof Error ? err.message : "Failed to upload media. Please try again.");
+    } finally {
+      setUploadingMedia(false);
+    }
     const newPreviews = selected.map((f) => URL.createObjectURL(f));
     const newTypes = selected.map((f) => f.type.startsWith("video/") ? "video" : "image");
     setMediaPreviews((prev) => [...prev, ...newPreviews]);
@@ -184,6 +256,14 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
 
         {/* Body */}
         <div className="px-6 sm:px-8 py-6 space-y-4 overflow-y-auto flex-1">
+          {uploadError && (
+            <div className="flex items-center gap-2 text-sm text-error bg-error-container/20 px-4 py-3 rounded-xl">
+              <span className="material-symbols-outlined text-sm">error</span>
+              {uploadError}
+            </div>
+          )}
+          {mediaPreviews.length > 0 && (
+            <div className="grid grid-cols-2 gap-2">
           {mediaPreviews.length > 0 && (<>
             <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
               {mediaPreviews.map((preview, i) => (
