@@ -42,16 +42,18 @@ export default function PostingModal({ activeTab: initialTab, onClose, onPostCre
     : null;
 
   function handleMediaSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
-    if (!files || files.length === 0 || uploadingMedia) return;
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
     if (mediaInputRef.current) mediaInputRef.current.value = "";
 
     const remaining = MAX_IMAGES - mediaPreviews.length;
-    const selected = Array.from(files).slice(0, remaining);
+    const selected = files.slice(0, remaining);
     if (selected.length === 0) return;
 
     const newPreviews = selected.map((f) => URL.createObjectURL(f));
     const newTypes = selected.map((f) => f.type.startsWith("video/") ? "video" : "image");
+
     setMediaPreviews((prev) => [...prev, ...newPreviews]);
     setMediaFiles((prev) => [...prev, ...selected]);
     setMediaTypes((prev) => [...prev, ...newTypes]);
