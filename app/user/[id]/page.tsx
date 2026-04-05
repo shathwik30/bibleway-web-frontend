@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import MainLayout from "../../components/MainLayout";
 import { fetchAPI } from "../../lib/api";
 import { useChat } from "../../lib/ChatContext";
+import { useToast } from "../../components/Toast";
 
 export default function PublicProfilePage() {
   const params = useParams();
@@ -24,8 +25,11 @@ export default function PublicProfilePage() {
   const [followList, setFollowList] = useState<any[]>([]);
   const [followListLoading, setFollowListLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [messagingLoading, setMessagingLoading] = useState(false);
   useEffect(() => { setCurrentUserId(localStorage.getItem("user_id")); }, []);
+  const router = useRouter();
   const { startConversation } = useChat();
+  const { showToast } = useToast();
 
   useEffect(() => {
     if (!userId) return;
@@ -58,11 +62,13 @@ export default function PublicProfilePage() {
         setIsFollowing(false);
         setProfile((p: any) => ({ ...p, follower_count: Math.max(0, (p.follower_count || 0) - 1) }));
       } else {
-        await fetchAPI(`/accounts/users/${userId}/follow/`, { method: "POST" });
+        await fetchAPI(`/accounts/users/${userId}/follow/`, { method: "POST", body: JSON.stringify({}) });
         setIsFollowing(true);
         setProfile((p: any) => ({ ...p, follower_count: (p.follower_count || 0) + 1 }));
       }
-    } catch { /* follow action failed */ } finally {
+    } catch (err: any) {
+      showToast("error", "Action failed", err?.message || "Could not complete the action.");
+    } finally {
       setFollowLoading(false);
     }
   }
@@ -165,11 +171,23 @@ export default function PublicProfilePage() {
                   {followLoading ? "..." : isFollowing ? "Unfollow" : "Follow"}
                 </button>
                 <button
-                  onClick={() => startConversation(userId)}
-                  className="w-full bg-surface-container-low text-primary py-3 rounded-xl font-semibold hover:bg-surface-container-high transition-all flex items-center justify-center gap-2"
+                  onClick={async () => {
+                    if (messagingLoading) return;
+                    setMessagingLoading(true);
+                    try {
+                      const conv = await startConversation(userId);
+                      if (conv?.id) router.push(`/chat/${conv.id}`);
+                    } catch (err: any) {
+                      showToast("error", "Message failed", err?.message || "Could not start conversation.");
+                    } finally {
+                      setMessagingLoading(false);
+                    }
+                  }}
+                  disabled={messagingLoading}
+                  className="w-full bg-surface-container-low text-primary py-3 rounded-xl font-semibold hover:bg-surface-container-high transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  <span className="material-symbols-outlined text-lg">chat</span>
-                  Message
+                  <span className="material-symbols-outlined text-lg">{messagingLoading ? "hourglass_empty" : "chat"}</span>
+                  {messagingLoading ? "Opening..." : "Message"}
                 </button>
                 <div className="relative">
                   <button
