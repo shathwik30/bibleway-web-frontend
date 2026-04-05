@@ -32,6 +32,7 @@ export default function ProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const contentRef = useRef<HTMLElement>(null);
 
   async function loadProfileData() {
     try {
@@ -142,14 +143,60 @@ export default function ProfilePage() {
 
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12 lg:grid lg:grid-cols-12 lg:gap-12">
-        {/* Profile Sidebar */}
-        <section className="lg:col-span-4 mb-12 lg:mb-0">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-12 lg:grid lg:grid-cols-12 lg:gap-12">
+        {/* Profile Header — compact on mobile, sidebar on desktop */}
+        <section className="lg:col-span-4 mb-6 lg:mb-0">
           <div className="sticky top-28">
-            <div className="flex flex-col items-center lg:items-start space-y-6">
-              {/* Avatar with Edit option */}
+            {/* Mobile: horizontal compact layout */}
+            <div className="flex items-center gap-4 lg:hidden mb-4">
+              <div className="relative shrink-0">
+                <div className="w-20 h-20 rounded-xl bg-surface-container-high shadow-lg flex items-center justify-center overflow-hidden border-2 border-white">
+                  {profile.profile_photo ? (
+                    <img src={profile.profile_photo} alt={profile.full_name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="material-symbols-outlined text-3xl text-on-surface-variant/30">person</span>
+                  )}
+                  {uploadingPhoto && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-xl">
+                      <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-white"></div>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute -bottom-1 -right-1 bg-primary text-on-primary w-6 h-6 rounded-full flex items-center justify-center shadow-lg"
+                >
+                  <span className="material-symbols-outlined text-xs">edit</span>
+                </button>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h1 className="font-headline text-xl text-on-surface truncate">{profile.full_name}</h1>
+                {profile.bio && <p className="text-on-surface-variant text-sm line-clamp-1 mt-0.5">{profile.bio}</p>}
+                <div className="flex gap-5 mt-2">
+                  <div>
+                    <span className="font-bold text-primary">{profile.follower_count || 0}</span>
+                    <span className="text-[10px] text-on-surface-variant ml-1">followers</span>
+                  </div>
+                  <div>
+                    <span className="font-bold text-primary">{profile.following_count || 0}</span>
+                    <span className="text-[10px] text-on-surface-variant ml-1">following</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* Mobile action buttons */}
+            <div className="flex gap-2 lg:hidden mb-4">
+              <button onClick={() => { setActiveTab("edit"); setTimeout(() => contentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 bg-primary text-on-primary py-2.5 rounded-xl font-semibold text-sm shadow-lg shadow-primary/20">Edit Profile</button>
+              <Link href="/settings" className="flex-1 bg-surface-container-low text-on-surface-variant py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-1.5">
+                <span className="material-symbols-outlined text-base">settings</span>
+                Settings
+              </Link>
+            </div>
+
+            {/* Desktop: vertical sidebar layout */}
+            <div className="hidden lg:flex flex-col items-start space-y-6">
               <div className="relative group">
-                <div className="w-32 h-32 lg:w-40 lg:h-40 rounded-xl bg-surface-container-high shadow-2xl shadow-primary/5 flex items-center justify-center overflow-hidden border-2 border-white">
+                <div className="w-40 h-40 rounded-xl bg-surface-container-high shadow-2xl shadow-primary/5 flex items-center justify-center overflow-hidden border-2 border-white">
                   {profile.profile_photo ? (
                     <img src={profile.profile_photo} alt={profile.full_name} className="w-full h-full object-cover" />
                   ) : (
@@ -164,59 +211,46 @@ export default function ProfilePage() {
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="absolute bottom-1 right-1 bg-primary text-on-primary w-8 h-8 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
-                  title="Change photo"
                 >
                   <span className="material-symbols-outlined text-sm">edit</span>
                 </button>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handlePhotoSelect}
-                  className="hidden"
-                  accept="image/*"
-                />
               </div>
-
-              {/* Name & Bio */}
-              <div className="text-center lg:text-left">
-                <h1 className="font-headline text-2xl sm:text-4xl text-on-surface mb-1">{profile.full_name}</h1>
+              <div>
+                <h1 className="font-headline text-4xl text-on-surface mb-1">{profile.full_name}</h1>
                 <p className="text-on-surface-variant font-body leading-relaxed max-w-sm">
                   {profile.bio || "No bio yet. Tell the community about your journey with faith."}
                 </p>
               </div>
-
-              {/* Stats */}
-              <div className="flex gap-8 border-y border-outline-variant/15 py-4 w-full justify-center lg:justify-start">
-                <div className="text-center lg:text-left">
+              <div className="flex gap-8 border-y border-outline-variant/15 py-4 w-full">
+                <div className="text-left">
                   <span className="block font-headline text-2xl text-primary">{profile.follower_count || 0}</span>
                   <span className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Followers</span>
                 </div>
-                <div className="text-center lg:text-left">
+                <div className="text-left">
                   <span className="block font-headline text-2xl text-primary">{profile.following_count || 0}</span>
                   <span className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Following</span>
                 </div>
               </div>
-
-              {/* Actions */}
               <div className="w-full space-y-2">
-                <button onClick={() => setActiveTab("edit")} className="w-full bg-linear-to-br from-primary to-primary-container text-on-primary py-3 rounded-xl font-semibold shadow-lg shadow-primary/20 hover:opacity-90 transition-all">Edit Profile</button>
+                <button onClick={() => { setActiveTab("edit"); setTimeout(() => contentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="w-full bg-linear-to-br from-primary to-primary-container text-on-primary py-3 rounded-xl font-semibold shadow-lg shadow-primary/20 hover:opacity-90 transition-all">Edit Profile</button>
                 <Link href="/settings" className="w-full bg-surface-container-low text-on-surface-variant py-3 rounded-xl font-semibold hover:bg-surface-container-high transition-all flex items-center justify-center gap-2">
                   <span className="material-symbols-outlined text-lg">settings</span>
                   Settings
                 </Link>
               </div>
             </div>
+            <input type="file" ref={fileInputRef} onChange={handlePhotoSelect} className="hidden" accept="image/*" />
           </div>
         </section>
 
         {/* Main Content */}
-        <section className="lg:col-span-8 space-y-12">
+        <section ref={contentRef} className="lg:col-span-8 space-y-6 lg:space-y-12">
           {/* Tabs */}
-          <div className="flex space-x-12 border-b border-outline-variant/15 overflow-x-auto no-scrollbar">
-            <button onClick={() => setActiveTab("posts")} className={`pb-4 transition-all whitespace-nowrap font-medium ${activeTab === "posts" ? "text-primary border-b-2 border-primary font-semibold" : "text-on-surface-variant hover:text-primary"}`}>My Posts ({posts.length})</button>
-            <button onClick={() => setActiveTab("prayers")} className={`pb-4 transition-all whitespace-nowrap font-medium ${activeTab === "prayers" ? "text-primary border-b-2 border-primary font-semibold" : "text-on-surface-variant hover:text-primary"}`}>My Prayers ({prayers.length})</button>
-            <button onClick={() => setActiveTab("edit")} className={`pb-4 transition-all whitespace-nowrap font-medium ${activeTab === "edit" ? "text-primary border-b-2 border-primary font-semibold" : "text-on-surface-variant hover:text-primary"}`}>Edit Profile</button>
-            <Link href="/analytics" className="pb-4 transition-all whitespace-nowrap font-medium text-on-surface-variant hover:text-primary">Analytics</Link>
+          <div className="flex gap-6 lg:gap-12 border-b border-outline-variant/15 overflow-x-auto no-scrollbar">
+            <button onClick={() => setActiveTab("posts")} className={`pb-3 lg:pb-4 transition-all whitespace-nowrap text-sm lg:text-base font-medium ${activeTab === "posts" ? "text-primary border-b-2 border-primary font-semibold" : "text-on-surface-variant hover:text-primary"}`}>Posts ({posts.length})</button>
+            <button onClick={() => setActiveTab("prayers")} className={`pb-3 lg:pb-4 transition-all whitespace-nowrap text-sm lg:text-base font-medium ${activeTab === "prayers" ? "text-primary border-b-2 border-primary font-semibold" : "text-on-surface-variant hover:text-primary"}`}>Prayers ({prayers.length})</button>
+            <button onClick={() => { setActiveTab("edit"); setTimeout(() => window.scrollTo({ top: (contentRef.current?.offsetTop || 0) - 80, behavior: "smooth" }), 50); }} className={`pb-3 lg:pb-4 transition-all whitespace-nowrap text-sm lg:text-base font-medium ${activeTab === "edit" ? "text-primary border-b-2 border-primary font-semibold" : "text-on-surface-variant hover:text-primary"}`}>Edit</button>
+            <Link href="/analytics" className="pb-3 lg:pb-4 transition-all whitespace-nowrap text-sm lg:text-base font-medium text-on-surface-variant hover:text-primary">Analytics</Link>
           </div>
 
           {/* Posts */}

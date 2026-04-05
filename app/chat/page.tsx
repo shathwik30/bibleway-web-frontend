@@ -15,6 +15,12 @@ export default function ChatPage() {
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
 
+  // Periodic refresh to catch messages missed during WS disconnections
+  useEffect(() => {
+    const interval = setInterval(() => loadConversations(), 15000);
+    return () => clearInterval(interval);
+  }, [loadConversations]);
+
   const filtered = conversations.filter(c => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -53,7 +59,7 @@ export default function ChatPage() {
 
   return (
     <MainLayout hideFooter>
-      <div className="max-w-7xl mx-auto flex flex-col h-[calc(100vh-4rem-5rem)] md:h-[calc(100vh-4rem)]" data-page>
+      <div className="max-w-7xl mx-auto flex flex-col h-[calc(100dvh-4rem-5.5rem)] md:h-[calc(100dvh-4rem)]" data-page>
         {/* Header */}
         <div className="px-5 pt-6 pb-2">
           <div className="flex items-center justify-between mb-5">

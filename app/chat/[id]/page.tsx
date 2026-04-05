@@ -50,15 +50,16 @@ export default function ChatConversationPage() {
     }
   }, [convId, loadMessages, markRead, getPresence]);
 
-  // Fetch conversation details if other_user is not available from context
+  // Always fetch conversation details to get the other user's name
+  // (conversations list may not be loaded when navigating from notifications/profile)
   useEffect(() => {
-    if (convId && !currentConv?.other_user) {
+    if (convId && !fetchedOtherUser) {
       fetchAPI(`/chat/conversations/${convId}/`).then(res => {
         const conv = res?.data || res;
         if (conv?.other_user) setFetchedOtherUser(conv.other_user);
       }).catch(() => {});
     }
-  }, [convId, currentConv?.other_user]);
+  }, [convId, fetchedOtherUser]);
 
   const [newMsgCount, setNewMsgCount] = useState(0);
   const prevMsgCountRef = useRef<number>(0);
@@ -229,7 +230,7 @@ export default function ChatConversationPage() {
         key={msg.id}
         className={`flex ${isOwn ? "justify-end" : "justify-start"} group/msg relative ${isLast ? "mb-0.5" : "mb-px"}`}
       >
-        <div className="max-w-[80%] min-w-0 overflow-hidden">
+        <div className="max-w-full min-w-0 overflow-hidden">
           {/* Sticker message - no bubble */}
           {isSticker ? (
             <div className={`flex ${isOwn ? "justify-end" : "justify-start"} px-1`}>
@@ -298,7 +299,7 @@ export default function ChatConversationPage() {
 
   return (
     <MainLayout hideFooter>
-      <div className="flex flex-col h-[calc(100vh-4rem-5rem)] md:h-[calc(100vh-4rem)]" data-page>
+      <div className="flex flex-col h-[calc(100dvh-4rem-5.5rem)] md:h-[calc(100dvh-4rem)]" data-page>
         {/* Header */}
         <div className="flex items-center gap-3 px-3 py-2.5 border-b border-outline-variant/10 bg-surface-container-lowest/90 backdrop-blur-md sticky top-16 z-10">
           <button
@@ -365,7 +366,7 @@ export default function ChatConversationPage() {
         <div
           ref={scrollRef}
           onScroll={() => { if (isNearBottom()) setNewMsgCount(0); }}
-          className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 custom-scrollbar bg-surface"
+          className="flex-1 overflow-y-auto overflow-x-hidden px-2 sm:px-3 py-4 custom-scrollbar bg-surface"
         >
           {convMessages.length === 0 && (
             <div className="flex flex-col items-center justify-center py-20">

@@ -36,8 +36,8 @@ export default function BottomNav() {
   const bottomLinks = [
     { href: "/", label: t("feed.home"), icon: "home" },
     { href: "/bible", label: t("bible.bible"), icon: "menu_book" },
-    { href: "/games", label: "Games", icon: "sports_esports" },
-    { href: "/chat", label: "Chat", icon: "chat" },
+    { href: "/games", label: t("nav.games", "Games"), icon: "sports_esports" },
+    { href: "/chat", label: t("nav.chat", "Chat"), icon: "chat" },
   ];
 
   const moreActive = ["/profile", "/settings"].some(p => pathname.startsWith(p));
@@ -80,7 +80,7 @@ export default function BottomNav() {
           <span className="material-symbols-outlined" style={moreActive ? { fontVariationSettings: "'FILL' 1" } : undefined}>
             menu
           </span>
-          <span className="font-sans uppercase tracking-widest text-[10px] font-bold mt-1">More</span>
+          <span className="font-sans uppercase tracking-widest text-[10px] font-bold mt-1">{t("nav.more", "More")}</span>
         </button>
 
         {moreOpen && (
@@ -93,10 +93,10 @@ export default function BottomNav() {
                   <button
                     key={lang.code}
                     onClick={() => handleLanguageChange(lang.code)}
-                    className={`text-lg px-1.5 py-1 rounded-lg transition-colors ${locale === lang.code ? "bg-primary/15 ring-1 ring-primary/30" : "hover:bg-surface-container-high"}`}
+                    className={`px-2 py-1 rounded-lg transition-colors text-xs font-bold ${locale === lang.code ? "bg-primary/15 text-primary ring-1 ring-primary/30" : "text-on-surface-variant hover:bg-surface-container-high"}`}
                     title={lang.label}
                   >
-                    {lang.flag}
+                    {lang.short}
                   </button>
                 ))}
               </div>
@@ -132,11 +132,11 @@ export default function BottomNav() {
             {/* Links */}
             <Link href="/profile" onClick={() => setMoreOpen(false)} className="flex items-center gap-3 px-4 py-3 text-sm text-on-surface hover:bg-surface-container-low transition-colors">
               <span className="material-symbols-outlined text-[20px]">person</span>
-              Profile
+              {t("profile.profile", "Profile")}
             </Link>
             <Link href="/settings" onClick={() => setMoreOpen(false)} className="flex items-center gap-3 px-4 py-3 text-sm text-on-surface hover:bg-surface-container-low transition-colors">
               <span className="material-symbols-outlined text-[20px]">settings</span>
-              Settings
+              {t("settings.settings", "Settings")}
             </Link>
           </div>
         )}
