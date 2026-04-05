@@ -34,7 +34,7 @@ export default function PublicProfilePage() {
         const profRes = await fetchAPI(`/accounts/users/${userId}/`);
         const userData = profRes.data || profRes;
         setProfile(userData);
-        setIsFollowing(userData.is_following || false);
+        setIsFollowing(userData.follow_status === "following");
 
         const [postsRes, prayersRes] = await Promise.all([
           fetchAPI(`/social/posts/?author=${userId}`).catch(() => ({ data: { results: [] } })),
@@ -92,7 +92,10 @@ export default function PublicProfilePage() {
     setFollowListLoading(true);
     try {
       const res = await fetchAPI(`/accounts/users/${userId}/${type}/`);
-      setFollowList(res?.data?.results || res?.results || res?.data || []);
+      const raw = res?.data?.results || res?.results || res?.data || [];
+      // Extract the nested user from FollowRelationship objects
+      const users = raw.map((r: any) => type === "followers" ? r.follower : r.following).filter(Boolean);
+      setFollowList(users);
     } catch { /* failed to load follow list */ } finally {
       setFollowListLoading(false);
     }
