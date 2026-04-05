@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { fetchAPI } from "../lib/api";
 import StickerPicker, { STICKERS } from "./StickerPicker";
 import { containsProfanity, getProfanityWarning } from "../lib/contentFilter";
@@ -146,6 +147,7 @@ function PostMediaCarousel({ media, postHref }: { media: { file: string; media_t
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxMedia, setLightboxMedia] = useState<{src: string, type: string} | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   function scrollTo(index: number) {
     const clamped = Math.max(0, Math.min(index, media.length - 1));
@@ -169,9 +171,12 @@ function PostMediaCarousel({ media, postHref }: { media: { file: string; media_t
               {item.media_type === "video" ? (
                 <CustomVideoPlayer src={item.file} onMaximize={() => setLightboxMedia({ src: item.file, type: "video" })} />
               ) : postHref ? (
-                <Link href={postHref} className={`block w-full h-full ${media.length === 1 ? 'max-h-[700px] min-h-[300px]' : ''}`}>
-                  <img src={item.file} alt={`Media ${i + 1}`} className="w-full h-full object-cover cursor-pointer" />
-                </Link>
+                <img
+                  src={item.file}
+                  alt={`Media ${i + 1}`}
+                  onClick={() => router.push(postHref)}
+                  className={`w-full h-full object-cover cursor-pointer ${media.length === 1 ? 'max-h-[700px] min-h-[300px]' : ''}`}
+                />
               ) : (
                 <img
                   src={item.file}
